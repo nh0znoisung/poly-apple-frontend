@@ -1280,9 +1280,15 @@ function renderRooms() {
     }
 
     if (filteredRooms.length === 0) {
-        list.innerHTML = '<div class="room-item" style="text-align:center;color:#999;cursor:default;">No rooms available</div>';
+        list.innerHTML = '<p style="text-align:center;color:var(--text-secondary);padding:20px;font-weight:600;">No rooms available</p>';
+        list.style.border = 'none';
+        list.style.background = 'transparent';
         return;
     }
+    
+    list.style.border = '';
+    list.style.background = '';
+    
     list.innerHTML = filteredRooms.map(r => {
         let btn, badge;
         if (r.status === 'waiting') {

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Poly Apple</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🍎</text></svg>">
-    <link rel="stylesheet" href="style.css?v=7">
+    <link rel="stylesheet" href="style.css?v=8">
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 </head>
 <body>
@@ -52,8 +52,8 @@
                 <input type="text" id="playerNameJoin" placeholder="Leave blank for a random name">
             </div>
             <div class="search-bar-container" style="display: flex; gap: 10px; margin-bottom: 16px;">
-                <input type="text" id="roomSearchInput" placeholder="Search by Room Name or ID..." onkeydown="if(event.key==='Enter') renderRooms()" style="flex-grow: 1; padding: 12px; border: 2px solid #ddd; border-radius: 8px; font-size: 1em; text-transform: uppercase;">
-                <button class="btn btn-icon" onclick="renderRooms()" title="Search Rooms" style="padding: 12px; border-radius: 8px; width: auto; aspect-ratio: 1; display: flex; align-items: center; justify-content: center; background: #2980b9; border: none; font-size: 1.2em; cursor: pointer; color: white;">🔍</button>
+                <input type="text" id="roomSearchInput" placeholder="Enter room ID" onkeydown="if(event.key==='Enter') renderRooms()" style="flex-grow: 1; padding: 12px; border: 2px solid #ddd; border-radius: 8px; font-size: 1em; text-transform: uppercase; font-family: inherit;">
+                <button class="btn btn-icon" onclick="renderRooms()" title="Search Rooms" style="padding: 0 20px; border-radius: 8px; background: #2980b9; border: none; font-size: 1.2em; cursor: pointer; color: white; display: flex; align-items: center; justify-content: center;">🔍</button>
             </div>
             <div id="roomsList" class="rooms-list">
                 <p style="text-align:center;color:#999;padding:20px;">Fetching rooms…</p>
@@ -222,6 +222,6 @@
 <!-- Fireworks Canvas -->
 <canvas id="fireworksCanvas" class="fireworks-canvas hidden"></canvas>
 
-<script src="script.js?v=7"></script>
+<script src="script.js?v=8"></script>
 </body>
 </html>
