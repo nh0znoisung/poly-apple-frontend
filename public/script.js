@@ -1072,6 +1072,30 @@ class GameLogic {
 }
 
 // ===========================
+// THEME TOGGLE
+// ===========================
+function toggleTheme() {
+    const body = document.body;
+    const current = body.getAttribute('data-theme') || 'dark';
+    const next = current === 'dark' ? 'light' : 'dark';
+    body.setAttribute('data-theme', next);
+    localStorage.setItem('polyapple_theme', next);
+    const btn = document.getElementById('themeToggleBtn');
+    const lbl = document.getElementById('themeLabel');
+    if (btn) btn.textContent = next === 'dark' ? '☀️' : '🌙';
+    if (lbl) lbl.textContent = next === 'dark' ? 'Dark' : 'Light';
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+    const saved = localStorage.getItem('polyapple_theme') || 'dark';
+    document.body.setAttribute('data-theme', saved);
+    const btn = document.getElementById('themeToggleBtn');
+    const lbl = document.getElementById('themeLabel');
+    if (btn) btn.textContent = saved === 'dark' ? '☀️' : '🌙';
+    if (lbl) lbl.textContent = saved === 'dark' ? 'Dark' : 'Light';
+});
+
+// ===========================
 // CONSTANTS & GLOBALS
 // ===========================
 function generateUUID() {

@@ -5,16 +5,29 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Poly Apple</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🍎</text></svg>">
-    <link rel="stylesheet" href="style.css?v=8">
+    <link rel="stylesheet" href="style.css?v=9">
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 </head>
-<body>
+<body data-theme="dark">
+
+<!-- ===== TOP NAVBAR ===== -->
+<div class="top-navbar">
+    <div class="nav-brand">
+        <span style="font-size: 1.5em; line-height: 1;">🍎</span>
+        <span class="nav-brand-name">Poly Apple</span>
+    </div>
+    <div class="nav-controls">
+        <div class="theme-toggle-wrap" onclick="toggleTheme()" title="Toggle Dark / Light Mode">
+            <button id="themeToggleBtn" class="theme-btn">☀️</button>
+            <span class="theme-label" id="themeLabel">Dark</span>
+        </div>
+    </div>
+</div>
 
 <!-- ===== LOBBY SCREEN ===== -->
 <div id="lobbyScreen" class="screen lobby-screen">
-    <div class="lobby-container">
-        <h1>🍎 Poly Apple</h1>
-        <p class="subtitle">Eat Apples by Drawing Polynomial Curves!</p>
+    <div class="lobby-container" style="margin-top: 56px;">
+        <p class="subtitle" style="margin-top: 10px;">Eat Apples by Drawing Polynomial Curves!</p>
 
         <div class="lobby-tabs">
             <button class="tab-btn active" onclick="switchLobbyTab('create')">Create Room</button>
@@ -222,6 +235,6 @@
 <!-- Fireworks Canvas -->
 <canvas id="fireworksCanvas" class="fireworks-canvas hidden"></canvas>
 
-<script src="script.js?v=8"></script>
+<script src="script.js?v=9"></script>
 </body>
 </html>
