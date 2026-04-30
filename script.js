@@ -1089,7 +1089,7 @@ if (!playerId) {
 
 const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
     ? 'http://localhost:3000' 
-    : 'https://poly-apple-api.onrender.com'; // Update this to your actual Render API URL later
+    : 'https://poly-apple-backend.onrender.com'; // Update this to your actual Render API URL later
 
 const socket = io(BACKEND_URL);
 const gameLogic = new GameLogic();
