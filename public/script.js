@@ -1110,6 +1110,13 @@ function switchLobbyTab(tab) {
         joinTab.classList.add('active');    createTab.classList.remove('active');
         btns[1].classList.add('active');    btns[0].classList.remove('active');
         startRoomRefresh();
+        
+        // Setup search input listener if not already set
+        const searchInput = document.getElementById('roomSearchInput');
+        if (searchInput && !searchInput.dataset.listenerSet) {
+            searchInput.addEventListener('input', renderRooms);
+            searchInput.dataset.listenerSet = 'true';
+        }
     }
 }
 
@@ -1250,13 +1257,33 @@ function stopRoomRefresh() {
     }
 }
 
+let lastFetchedRooms = [];
+
 socket.on('availableRooms', (rooms) => {
+    lastFetchedRooms = rooms;
+    renderRooms();
+});
+
+function renderRooms() {
     const list = document.getElementById('roomsList');
-    if (rooms.length === 0) {
+    if (!list) return;
+
+    const searchInput = document.getElementById('roomSearchInput');
+    const query = searchInput ? searchInput.value.trim().toLowerCase() : '';
+
+    let filteredRooms = lastFetchedRooms;
+    if (query) {
+        filteredRooms = lastFetchedRooms.filter(r => 
+            r.code.toLowerCase().includes(query) || 
+            (r.creator && r.creator.toLowerCase().includes(query))
+        );
+    }
+
+    if (filteredRooms.length === 0) {
         list.innerHTML = '<div class="room-item" style="text-align:center;color:#999;cursor:default;">No rooms available</div>';
         return;
     }
-    list.innerHTML = rooms.map(r => {
+    list.innerHTML = filteredRooms.map(r => {
         let btn, badge;
         if (r.status === 'waiting') {
             btn   = `<button class="btn btn-submit" onclick="event.stopPropagation();joinRoomWithCode('${r.code}')">Join</button>`;
@@ -1279,7 +1306,7 @@ socket.on('availableRooms', (rooms) => {
             </div>
         `;
     }).join('');
-});
+}
 
 // ── Join room ──────────────────────────────────
 function joinRoomWithCode(roomCode) {
@@ -1297,12 +1324,7 @@ function joinRoomWithCode(roomCode) {
     socket.emit('joinRoom', { roomCode, name, avatarIndex, playerId });
 }
 
-function joinRoomByCode() {
-    if (gameInstance.isJoining) return;
-    const roomCode = document.getElementById('manualRoomCode').value.trim().toUpperCase();
-    if (!roomCode) { alert('Please enter a room code'); return; }
-    joinRoomWithCode(roomCode);
-}
+
 
 socket.on('playerJoined', (data) => {
     gameInstance.opponentName        = data.joinerName;
@@ -1411,7 +1433,8 @@ function cancelRoom() {
     showLobbyTab('create');
     document.getElementById('createRoomForm').reset();
     document.getElementById('playerNameJoin').value = '';
-    document.getElementById('manualRoomCode').value  = '';
+    const searchInput = document.getElementById('roomSearchInput');
+    if (searchInput) searchInput.value = '';
     gameInstance.roomCode   = null;
     gameInstance.playerRole = 'creator';
     gameInstance.isJoining  = false;

@@ -23,13 +23,7 @@
 
         <!-- Create Room Tab -->
         <div id="createTab" class="lobby-tab active">
-            <div class="info-box green">
-                <strong>📖 How to Create a Room:</strong><br>
-                ✏️ Enter your name (or leave blank for a random one)<br>
-                ⚙️ Select difficulty and time limit<br>
-                🚀 Click "CREATE ROOM &amp; WAIT", share the code<br>
-                ▶️ Click "START GAME" when opponent joins!
-            </div>
+
             <form id="createRoomForm" onsubmit="event.preventDefault(); createRoom(document.getElementById('playerNameCreate').value);">
                 <div class="form-group">
                     <label for="playerNameCreate">Your Name (optional):</label>
@@ -47,31 +41,22 @@
                     <label for="time">Game Timer (seconds):</label>
                     <input type="number" id="time" value="30" min="30" max="1800" required>
                 </div>
-                <button type="submit" class="btn btn-primary btn-large">🚀 CREATE ROOM &amp; WAIT</button>
+                <button type="submit" class="btn btn-primary btn-large">🚀 CREATE ROOM</button>
             </form>
         </div>
 
         <!-- Join Room Tab -->
         <div id="joinTab" class="lobby-tab">
-            <div class="info-box blue">
-                <strong>📖 How to Join a Room:</strong><br>
-                ✏️ Enter your name (or leave blank for a random one)<br>
-                🔄 Available rooms auto-refresh every 2 seconds<br>
-                🎮 Click "JOIN" on any room in the list
-            </div>
             <div class="form-group">
                 <label for="playerNameJoin">Your Name (optional):</label>
                 <input type="text" id="playerNameJoin" placeholder="Leave blank for a random name">
             </div>
-            <button class="btn btn-primary" onclick="refreshRoomList()" style="margin-bottom:16px;">🔄 Refresh Rooms</button>
-            <div id="roomsList" class="rooms-list">
-                <p style="text-align:center;color:#999;padding:20px;">Auto-refreshing every 2 seconds…</p>
+            <div class="search-bar-container" style="display: flex; gap: 10px; margin-bottom: 16px;">
+                <input type="text" id="roomSearchInput" placeholder="Search by Room Name or ID..." onkeydown="if(event.key==='Enter') renderRooms()" style="flex-grow: 1; padding: 12px; border: 2px solid #ddd; border-radius: 8px; font-size: 1em; text-transform: uppercase;">
+                <button class="btn btn-icon" onclick="renderRooms()" title="Search Rooms" style="padding: 12px; border-radius: 8px; width: auto; aspect-ratio: 1; display: flex; align-items: center; justify-content: center; background: #2980b9; border: none; font-size: 1.2em; cursor: pointer; color: white;">🔍</button>
             </div>
-            <div id="joinManual" style="margin-top:20px;padding-top:20px;border-top:2px solid #ddd;">
-                <p style="margin-bottom:10px;color:#666;font-weight:600;">Or enter room code manually:</p>
-                <input type="text" id="manualRoomCode" placeholder="Room code (e.g. ABC123)" maxlength="6"
-                    style="width:100%;padding:12px;border:2px solid #ddd;border-radius:8px;font-size:1em;margin-bottom:10px;font-family:monospace;text-transform:uppercase;">
-                <button class="btn btn-primary" onclick="joinRoomByCode()" style="width:100%;">🎮 JOIN BY CODE</button>
+            <div id="roomsList" class="rooms-list">
+                <p style="text-align:center;color:#999;padding:20px;">Fetching rooms…</p>
             </div>
         </div>
 
