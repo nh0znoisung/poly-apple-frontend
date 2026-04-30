@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Poly Apple</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🍎</text></svg>">
+    <link rel="stylesheet" href="style.css?v=7">
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+</head>
+<body>
+
+<!-- ===== LOBBY SCREEN ===== -->
+<div id="lobbyScreen" class="screen lobby-screen">
+    <div class="lobby-container">
+        <h1>🍎 Poly Apple</h1>
+        <p class="subtitle">Eat Apples by Drawing Polynomial Curves!</p>
+
+        <div class="lobby-tabs">
+            <button class="tab-btn active" onclick="switchLobbyTab('create')">Create Room</button>
+            <button class="tab-btn" onclick="switchLobbyTab('join')">Join Room</button>
+        </div>
+
+        <!-- Create Room Tab -->
+        <div id="createTab" class="lobby-tab active">
+            <div class="info-box green">
+                <strong>📖 How to Create a Room:</strong><br>
+                ✏️ Enter your name (or leave blank for a random one)<br>
+                ⚙️ Select difficulty and time limit<br>
+                🚀 Click "CREATE ROOM &amp; WAIT", share the code<br>
+                ▶️ Click "START GAME" when opponent joins!
+            </div>
+            <form id="createRoomForm" onsubmit="event.preventDefault(); createRoom(document.getElementById('playerNameCreate').value);">
+                <div class="form-group">
+                    <label for="playerNameCreate">Your Name (optional):</label>
+                    <input type="text" id="playerNameCreate" placeholder="Leave blank for a random name">
+                </div>
+                <div class="form-group">
+                    <label for="density">Apple Density:</label>
+                    <select id="density" required>
+                        <option value="0.1">10% — Easier</option>
+                        <option value="0.25" selected>25% — Normal</option>
+                        <option value="0.5">50% — Hard</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="time">Game Timer (seconds):</label>
+                    <input type="number" id="time" value="30" min="30" max="1800" required>
+                </div>
+                <button type="submit" class="btn btn-primary btn-large">🚀 CREATE ROOM &amp; WAIT</button>
+            </form>
+        </div>
+
+        <!-- Join Room Tab -->
+        <div id="joinTab" class="lobby-tab">
+            <div class="info-box blue">
+                <strong>📖 How to Join a Room:</strong><br>
+                ✏️ Enter your name (or leave blank for a random one)<br>
+                🔄 Available rooms auto-refresh every 2 seconds<br>
+                🎮 Click "JOIN" on any room in the list
+            </div>
+            <div class="form-group">
+                <label for="playerNameJoin">Your Name (optional):</label>
+                <input type="text" id="playerNameJoin" placeholder="Leave blank for a random name">
+            </div>
+            <button class="btn btn-primary" onclick="refreshRoomList()" style="margin-bottom:16px;">🔄 Refresh Rooms</button>
+            <div id="roomsList" class="rooms-list">
+                <p style="text-align:center;color:#999;padding:20px;">Auto-refreshing every 2 seconds…</p>
+            </div>
+            <div id="joinManual" style="margin-top:20px;padding-top:20px;border-top:2px solid #ddd;">
+                <p style="margin-bottom:10px;color:#666;font-weight:600;">Or enter room code manually:</p>
+                <input type="text" id="manualRoomCode" placeholder="Room code (e.g. ABC123)" maxlength="6"
+                    style="width:100%;padding:12px;border:2px solid #ddd;border-radius:8px;font-size:1em;margin-bottom:10px;font-family:monospace;text-transform:uppercase;">
+                <button class="btn btn-primary" onclick="joinRoomByCode()" style="width:100%;">🎮 JOIN BY CODE</button>
+            </div>
+        </div>
+
+        <!-- Waiting Screen (shown inside lobby) -->
+        <div id="waitingScreen" class="lobby-tab hidden">
+            <h2 style="text-align:center;margin-bottom:20px;">⏳ Waiting for Opponent…</h2>
+
+            <!-- Player preview -->
+            <div class="waiting-player-card">
+                <div id="waitingAvatar"></div>
+                <div>
+                    <div style="font-weight:700;font-size:1.05em;" id="waitingPlayerName"></div>
+                    <div style="font-size:0.85em;color:#888;">That's you!</div>
+                </div>
+            </div>
+
+            <div class="room-code-display">
+                <p style="margin-bottom:10px;color:#666;font-weight:600;">📤 SHARE THIS ROOM CODE:</p>
+                <div class="room-code" id="roomCodeDisplay" style="cursor:pointer;user-select:all;"></div>
+                <button id="copyRoomCodeBtn" onclick="copyRoomCode()" class="btn btn-secondary" style="margin-top:10px;padding:8px 24px;font-size:0.9em;width:auto;">📋 Copy</button>
+            </div>
+
+            <p id="waitingMessage" style="text-align:center;margin-top:20px;color:#666;font-size:1.05em;font-weight:500;">Waiting for opponent to join…</p>
+
+            <div class="info-box yellow" style="margin:16px 0;">
+                <strong>💡 What Now?</strong><br>
+                • Open this site in another browser/device<br>
+                • Go to "Join Room" tab and paste the code above
+            </div>
+
+            <button id="startGameBtn" class="btn btn-start" onclick="startGameWithOpponent()" style="display:none;">▶️ START GAME!</button>
+            <button class="btn btn-secondary" onclick="cancelRoom()" style="margin-top:10px;width:100%;">❌ Cancel</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== COUNTDOWN OVERLAY ===== -->
+<div id="countdownOverlay" class="countdown-overlay hidden">
+    <div id="countdownNumber" class="countdown-number"></div>
+</div>
+
+<!-- ===== GAME SCREEN ===== -->
+<div id="gameScreen" class="screen game-screen hidden">
+
+    <!-- Review mode banner -->
+    <div id="reviewBanner" class="review-banner hidden">
+        📋 Review Mode — Game Over &nbsp;
+        <button class="btn btn-secondary" onclick="backToSummary()" style="padding:4px 16px;font-size:0.85em;">← Back to Summary</button>
+    </div>
+
+    <!-- Header -->
+    <div class="game-header">
+        <!-- Player 1 -->
+        <div class="player-card" id="playerCard1">
+            <div id="crown1" class="crown" style="visibility:hidden;">👑</div>
+            <div class="avatar-col">
+                <div id="player1Avatar" class="player-avatar"></div>
+                <div id="youTag1" class="you-tag you-tag-hidden">YOU</div>
+            </div>
+            <div class="player-meta">
+                <div class="player-name" id="player1NameDisplay">Player 1</div>
+                <div class="player-stats">
+                    ⭐ <span id="player1Score">0</span>
+                    &nbsp;📝 <span id="player1Expr">0</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Centre: timer + apples remaining -->
+        <div class="game-centre">
+            <div class="game-title-text">🍎 Poly Apple</div>
+            <div id="gameTimer" class="game-timer">2:00</div>
+            <div id="applesRemaining" class="apples-remaining">🍎 0 left</div>
+        </div>
+
+        <!-- Player 2 -->
+        <div class="player-card player-card-right" id="playerCard2">
+            <div class="player-meta" style="text-align:right;">
+                <div class="player-name" id="player2NameDisplay">Player 2</div>
+                <div class="player-stats">
+                    ⭐ <span id="player2Score">0</span>
+                    &nbsp;📝 <span id="player2Expr">0</span>
+                </div>
+            </div>
+            <div class="avatar-col">
+                <div id="player2Avatar" class="player-avatar"></div>
+                <div id="youTag2" class="you-tag you-tag-hidden">YOU</div>
+            </div>
+            <div id="crown2" class="crown" style="visibility:hidden;">👑</div>
+        </div>
+    </div>
+
+    <!-- Main content: canvas + right panel -->
+    <div class="game-body">
+
+        <!-- Canvas -->
+        <div class="canvas-wrapper">
+            <canvas id="gameCanvas"></canvas>
+            <div id="coordTooltip" class="coord-tooltip hidden"></div>
+        </div>
+
+        <!-- Right panel: input + history -->
+        <div class="right-panel">
+            <!-- My input -->
+            <div class="player-input" id="player1Input">
+                <div id="myPlayerIdentity1" class="my-player-identity"></div>
+                <h3>Enter equation:</h3>
+                <div class="input-group">
+                    <span class="equation-prefix">y =</span>
+                    <input type="text" id="equation1" placeholder="x^2 + x - 1" autocomplete="off">
+                    <button class="btn btn-submit" onclick="gameLogic.submitEquation(1)">Go</button>
+                </div>
+                <div id="error1" class="error-message"></div>
+                <div id="linearQuota1" class="linear-quota"></div>
+                <div id="penaltyDisplay1" class="penalty-display"></div>
+                <div class="input-hint">Accepts polynomials of x, degree 0–10 &nbsp;|&nbsp; e.g. x^3 - 2x + 1</div>
+            </div>
+            <div class="player-input hidden" id="player2Input">
+                <div id="myPlayerIdentity2" class="my-player-identity"></div>
+                <h3>Enter equation:</h3>
+                <div class="input-group">
+                    <span class="equation-prefix">y =</span>
+                    <input type="text" id="equation2" placeholder="x^2 + x - 1" autocomplete="off">
+                    <button class="btn btn-submit" onclick="gameLogic.submitEquation(2)">Go</button>
+                </div>
+                <div id="error2" class="error-message"></div>
+                <div id="linearQuota2" class="linear-quota"></div>
+                <div id="penaltyDisplay2" class="penalty-display"></div>
+                <div class="input-hint">Accepts polynomials of x, degree 0–10 &nbsp;|&nbsp; e.g. x^3 - 2x + 1</div>
+            </div>
+
+            <!-- History log -->
+            <div class="history-panel">
+                <div class="history-title">📜 History</div>
+                <div id="historyLog" class="history-log"></div>
+            </div>
+
+            <!-- Controls -->
+            <div class="game-controls">
+                <button class="btn btn-warning" id="surrenderBtn" onclick="gameLogic.surrender()">⚔️ Surrender</button>
+                <button class="btn btn-danger" id="exitBtn" onclick="gameLogic.exit()">🚪 Exit</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ===== SUMMARY SCREEN ===== -->
+<div id="summaryScreen" class="screen summary-screen hidden">
+    <div class="summary-container">
+        <div id="summaryContent"></div>
+        <div class="summary-actions">
+            <button class="btn btn-secondary" onclick="viewBoard()">🔍 View Board</button>
+            <button class="btn btn-room"      onclick="returnToRoom()" id="returnToRoomBtn">🔙 Return to Room</button>
+            <button class="btn btn-primary"   onclick="exitToLobby()">🚪 Exit to Lobby</button>
+        </div>
+    </div>
+</div>
+
+
+<!-- Sound toggle — fixed top-right -->
+<button id="soundToggleBtn" onclick="toggleSound()" class="sound-btn" title="Toggle sound">🔊</button>
+
+<!-- Fireworks Canvas -->
+<canvas id="fireworksCanvas" class="fireworks-canvas hidden"></canvas>
+
+<script src="script.js?v=7"></script>
+</body>
+</html>
