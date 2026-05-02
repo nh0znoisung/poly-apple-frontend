@@ -1248,10 +1248,19 @@ function updateSettingsTags() {
     const mode  = modeEl.value;
 
     // Set CSS custom property so the ::webkit-slider-runnable-track pseudo-element can read it
-    const min = parseInt(densityEl.min) || 0;
+    const sliderMin = parseInt(densityEl.min) || 1;
     const max = parseInt(densityEl.max) || 100;
-    const fillPct = ((pct - min) / (max - min)) * 100;
+    const fillPct = ((pct - sliderMin) / (max - sliderMin)) * 100;
     densityEl.style.setProperty('--slider-fill', fillPct.toFixed(1) + '%');
+
+    // Regenerate ruler ticks: 7 apple-count labels from 0 to gs²
+    const ruler = document.getElementById('sliderRuler');
+    if (ruler) {
+        const total = gs * gs;
+        ruler.innerHTML = Array.from({ length: 7 }, (_, i) =>
+            `<span>${Math.round(total * i / 6)}</span>`
+        ).join('');
+    }
 
     const tagG = document.getElementById('tagGrid');
     const tagD = document.getElementById('tagDensity');
@@ -1264,7 +1273,7 @@ function updateSettingsTags() {
 
     const densityValEl = document.getElementById('densityVal');
     const densityPctEl = document.getElementById('densityPct');
-    if (densityValEl) densityValEl.textContent = count;
+    if (densityValEl) densityValEl.textContent = Math.max(1, count);
     if (densityPctEl) densityPctEl.textContent = `(${pct}%)`;
 }
 
@@ -2125,7 +2134,16 @@ function initBgCanvas() {
 
     function spawnBurst(x, y, appleSize) {
         // Expanding ring
-        BG.particles.push({ type: 'ring', x, y, life: 18, maxLife: 18, radius: appleSize * 0.3 });
+        BG.particles.push({ type: 'ring', x, y, life: 22, maxLife: 22, radius: appleSize * 0.3 });
+        // 8 yellow rays shooting outward
+        for (let i = 0; i < 8; i++) {
+            BG.particles.push({
+                type: 'ray', x, y,
+                angle: (i / 8) * Math.PI * 2,
+                life: 20, maxLife: 20,
+                maxLen: appleSize * 2.5
+            });
+        }
         // Apple chunks
         for (let i = 0; i < 5; i++) {
             const ang = (i / 5) * Math.PI * 2 + Math.random() * 0.5;
@@ -2496,6 +2514,7 @@ function initBgCanvas() {
     }
 
     function drawParticles() {
+        const isDarkTheme = document.body.dataset.theme !== 'light';
         BG.particles = BG.particles.filter(p => p.life > 0);
         BG.particles.forEach(p => {
             p.life--;
@@ -2504,9 +2523,22 @@ function initBgCanvas() {
                 const r = p.radius + (1 - t) * p.radius * 3.5;
                 ctx.save();
                 ctx.globalAlpha = t * 0.85;
-                ctx.strokeStyle = 'rgba(255,200,50,1)';
-                ctx.lineWidth = 2.5;
+                ctx.strokeStyle = isDarkTheme ? 'rgba(255,220,50,1)' : 'rgba(200,120,0,1)';
+                ctx.lineWidth = isDarkTheme ? 2.5 : 3;
                 ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.stroke();
+                ctx.restore();
+            } else if (p.type === 'ray') {
+                const progress = 1 - t;
+                const rayLen = p.maxLen * Math.sqrt(progress);
+                ctx.save();
+                ctx.globalAlpha = t * 0.9;
+                ctx.strokeStyle = isDarkTheme ? 'rgba(255,220,50,1)' : 'rgba(200,110,0,1)';
+                ctx.lineWidth = isDarkTheme ? 2.5 : 3;
+                ctx.lineCap = 'round';
+                ctx.beginPath();
+                ctx.moveTo(p.x, p.y);
+                ctx.lineTo(p.x + Math.cos(p.angle) * rayLen, p.y + Math.sin(p.angle) * rayLen);
+                ctx.stroke();
                 ctx.restore();
             } else if (p.type === 'chunk') {
                 p.vx *= 0.91; p.vy *= 0.91;

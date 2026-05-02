@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Poly Apple</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🍎</text></svg>">
-    <link rel="stylesheet" href="style.css?v=19">
+    <link rel="stylesheet" href="style.css?v=20">
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 </head>
 <body data-theme="dark">
@@ -78,14 +78,8 @@
                         <div class="form-group" style="margin-bottom:6px;">
                             <label for="density">🍎 Apples: <span id="densityVal" style="color:var(--accent-red);font-weight:800;">50</span> <span id="densityPct" class="muted-text" style="font-size:0.85em;margin-left:4px;">(50%)</span></label>
                             <div class="slider-container">
-                                <input type="range" id="density" min="0" max="100" value="50" step="1" oninput="updateSettingsTags()" class="custom-slider">
-                                <div class="slider-ruler">
-                                    <span>0%</span>
-                                    <span>25%</span>
-                                    <span>50%</span>
-                                    <span>75%</span>
-                                    <span>100%</span>
-                                </div>
+                                <input type="range" id="density" min="1" max="100" value="50" step="1" oninput="updateSettingsTags()" class="custom-slider">
+                                <div class="slider-ruler" id="sliderRuler"></div>
                             </div>
                         </div>
                         <div class="form-group" style="margin-bottom:14px;">
@@ -433,6 +427,6 @@
 <!-- Fireworks Canvas -->
 <canvas id="fireworksCanvas" class="fireworks-canvas hidden"></canvas>
 
-<script src="script.js?v=19"></script>
+<script src="script.js?v=20"></script>
 </body>
 </html>
