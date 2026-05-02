@@ -2066,23 +2066,48 @@ function initBgCanvas() {
     window.addEventListener('resize', resize);
 
     // ── Helpers ──────────────────────────────────────
-    function mkApple(fromTop) {
-        const size = 45;
+    function mkApple(spawn) {
+        const size  = 45;
         const speed = 2.5 + Math.random() * 2.0;
-        const angle = fromTop
-            ? Math.PI * 0.5 + (Math.random() - 0.5) * 0.6
-            : Math.random() * Math.PI * 2;
+
+        if (!spawn) {
+            // Initial placement: scatter inside canvas with random direction
+            const angle = Math.random() * Math.PI * 2;
+            return {
+                x: size + Math.random() * (canvas.width  - size * 2),
+                y: 60 + size + Math.random() * (canvas.height - 60 - size * 2),
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                size,
+                rotation: Math.random() * Math.PI * 2,
+                rotSpeed: (Math.random() - 0.5) * 0.05,
+                opacity: 1, dying: false, dyingTick: 0
+            };
+        }
+
+        // Respawn: enter from one of 8 spawn points (4 edges + 4 corners)
+        const W = canvas.width, H = canvas.height;
+        const type = Math.floor(Math.random() * 8);
+        const spread = 0.45; // ±~13° angular jitter
+        let x, y, angle;
+
+        if      (type === 0) { x = size + Math.random()*(W-size*2); y = -size;   angle =  Math.PI*0.50 + (Math.random()-0.5)*spread; } // top → down
+        else if (type === 1) { x = W+size; y = 60+size+Math.random()*(H-60-size*2); angle =  Math.PI      + (Math.random()-0.5)*spread; } // right → left
+        else if (type === 2) { x = size + Math.random()*(W-size*2); y = H+size;   angle = -Math.PI*0.50 + (Math.random()-0.5)*spread; } // bottom → up
+        else if (type === 3) { x = -size; y = 60+size+Math.random()*(H-60-size*2); angle =               (Math.random()-0.5)*spread; } // left → right
+        else if (type === 4) { x = -size;   y = -size;   angle =  Math.PI*0.25 + (Math.random()-0.5)*spread; } // ↙ top-left → diagonal down-right
+        else if (type === 5) { x = W+size;  y = -size;   angle =  Math.PI*0.75 + (Math.random()-0.5)*spread; } // ↘ top-right → diagonal down-left
+        else if (type === 6) { x = -size;   y = H+size;  angle = -Math.PI*0.25 + (Math.random()-0.5)*spread; } // ↗ bottom-left → diagonal up-right
+        else                 { x = W+size;  y = H+size;  angle = -Math.PI*0.75 + (Math.random()-0.5)*spread; } // ↖ bottom-right → diagonal up-left
+
         return {
-            x: Math.random() * (canvas.width - size * 2) + size,
-            y: fromTop ? -size - Math.random() * 60 : Math.random() * (canvas.height - size * 2 - 60) + 60 + size,
+            x, y,
             vx: Math.cos(angle) * speed,
-            vy: fromTop ? 3.5 + Math.random() * 2.5 : Math.sin(angle) * speed,
+            vy: Math.sin(angle) * speed,
             size,
             rotation: Math.random() * Math.PI * 2,
             rotSpeed: (Math.random() - 0.5) * 0.05,
-            opacity: 1,
-            dying: false,
-            dyingTick: 0
+            opacity: 1, dying: false, dyingTick: 0
         };
     }
 
