@@ -105,15 +105,41 @@ const soundManager = new SoundManager();
 
 function toggleSound() {
     const on = soundManager.toggle();
-    const btn = document.getElementById('soundToggleBtn');
-    if (btn) btn.textContent = on ? '🔊' : '🔇';
+    const iconOn = document.getElementById('soundIconOn');
+    const iconOff = document.getElementById('soundIconOff');
+    if (iconOn && iconOff) {
+        iconOn.classList.toggle('hidden', !on);
+        iconOff.classList.toggle('hidden', on);
+    }
 }
+
+function toggleTutorial() {
+    const overlay = document.getElementById('tutorialOverlay');
+    if (!overlay) return;
+    overlay.classList.toggle('hidden');
+}
+
+function closeTutorialOnBackdrop(e) {
+    if (e.target.id === 'tutorialOverlay') {
+        toggleTutorial();
+    }
+}
+
+// Global key listeners
+window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        const tutorial = document.getElementById('tutorialOverlay');
+        if (tutorial && !tutorial.classList.contains('hidden')) {
+            toggleTutorial();
+        }
+    }
+});
 
 // ===========================
 // GAME STATE
 // ===========================
 class GameState {
-    constructor(player1Name, player2Name, appleDensity, timePerTurn, applePositions = null) {
+    constructor(player1Name, player2Name, appleDensity, timePerTurn, applePositions = null, gridSize = 10) {
         this.initialTimePerTurn = timePerTurn;
         this.timeRemaining = timePerTurn;
         this.startedAt = Date.now();
@@ -133,8 +159,8 @@ class GameState {
 
         this.apples = [];
         this.appleDensity = appleDensity;
-        this.gridSize = 10;
-        this.totalApples = 0;
+        this.gridSize = parseInt(gridSize) || 10;
+        this.totalPoints = this.gridSize * this.gridSize;
         this.gameOver = false;
         this.endReason = null;
 
@@ -145,12 +171,11 @@ class GameState {
         if (positions && positions.length > 0) {
             this.apples = positions.map(p => ({ x: p.x, y: p.y, eaten: false, eatenBy: null }));
         } else {
-            const total = (this.gridSize + 1) * (this.gridSize + 1);
-            const count = Math.floor(total * this.appleDensity);
+            const count = Math.floor(this.totalPoints * this.appleDensity);
             const posSet = new Set();
             while (posSet.size < count) {
-                const x = Math.floor(Math.random() * (this.gridSize + 1));
-                const y = Math.floor(Math.random() * (this.gridSize + 1));
+                const x = Math.floor(Math.random() * this.gridSize);
+                const y = Math.floor(Math.random() * this.gridSize);
                 posSet.add(`${x},${y}`);
             }
             this.apples = Array.from(posSet).map(p => {
@@ -181,7 +206,7 @@ class GameState {
 // INPUT PARSER  (polynomial up to degree 10)
 // ===========================
 class InputParser {
-    static parse(input) {
+    static parse(input, gridSize = 10) {
         if (!input || typeof input !== 'string') throw new Error('Invalid input');
 
         const norm = input.trim().toLowerCase().replace(/\s+/g, '');
@@ -195,11 +220,54 @@ class InputParser {
         const m = norm.match(/^y=(.+)$/);
         if (!m) throw new Error('Format: y = f(x)');
 
-        const expr = m[1];
+        // Implicit multiplication: "2x" → "2*x", "3x^2" → "3*x^2"
+        const expr = m[1].replace(/(\d)(x)/g, '$1*x');
 
-        // Allow only safe math characters
-        if (!/^[\dx+\-*/^().]+$/i.test(expr)) {
-            throw new Error('Only numbers, x, and operators ( + − × / ^ ) are allowed');
+        // Rule: No parentheses
+        if (/[()]/.test(expr)) {
+            throw new Error('Parentheses are forbidden — expand the expression manually');
+        }
+
+        // Rule: No division
+        if (/\//.test(expr)) {
+            throw new Error('Division is forbidden — use integer polynomial coefficients only');
+        }
+
+        // Rule: Integer coefficients only — no decimal points
+        if (/\d\.\d|\.\d/.test(expr)) {
+            throw new Error('Decimal numbers are forbidden — use integer coefficients only');
+        }
+
+        // Rule: No negative exponents
+        if (/\^-/.test(expr)) {
+            throw new Error('Negative exponents are forbidden');
+        }
+
+        // Rule: Exponent must be a non-negative integer (no x^x)
+        if (/\^[^0-9]/.test(expr)) {
+            throw new Error('Exponent must be a non-negative integer (e.g. x^3), not a variable');
+        }
+
+        // Allowed characters only: digits, x, +, -, *, ^
+        if (!/^[\dx+\-*^]+$/i.test(expr)) {
+            throw new Error('Only numbers, x, and operators ( + − * ^ ) are allowed');
+        }
+
+        // Rule: All explicit exponents must be ≤ 10
+        const expTokens = expr.match(/\^(\d+)/g) || [];
+        for (const tok of expTokens) {
+            const exp = parseInt(tok.slice(1), 10);
+            if (exp > 10) {
+                throw new Error(`Exponent ^${exp} exceeds the maximum degree of 10`);
+            }
+        }
+
+        // Rule: |coefficient| ≤ 10^9 — check all numeric literals
+        const numLiterals = expr.match(/\d+/g) || [];
+        for (const n of numLiterals) {
+            if (parseInt(n, 10) > 1_000_000_000) {
+                throw new Error(`Coefficient ${n} exceeds the maximum |aᵢ| ≤ 10⁹`);
+            }
         }
 
         // Convert ^ to ** for JS eval
@@ -216,36 +284,48 @@ class InputParser {
             throw new Error('Cannot evaluate expression — check syntax');
         }
 
+        // Rule: Degree ≤ 10 (catches composed high-degree cases like x^5*x^7 = x^12)
         const degree = InputParser.detectDegree(evalFn);
-        const points = InputParser.getCurvePoints(evalFn);
+        if (degree > 10) {
+            throw new Error('Degree exceeds 10 — reduce the total degree of your polynomial');
+        }
+
+        const points = InputParser.getCurvePoints(evalFn, gridSize);
 
         return { type: 'polynomial', evalFn, expr: input.trim(), degree, isValid: true, points };
     }
 
-    // Finite-difference method: n-th differences of a degree-n polynomial are constant
+    // Finite-difference method: n-th differences of a degree-n polynomial are constant.
+    // Detects up to degree 14 so that composed expressions like x^5*x^7=x^12 are caught.
+    // Uses a dual absolute+relative tolerance to handle large-coefficient polynomials
+    // (e.g. 1e9*x^10) where floating-point rounding in the differences is significant.
     static detectDegree(evalFn) {
         try {
             let vals = [];
-            for (let i = 0; i <= 13; i++) vals.push(evalFn(i));
+            for (let i = 0; i <= 15; i++) vals.push(evalFn(i));
 
-            for (let n = 0; n <= 10; n++) {
+            for (let n = 0; n <= 14; n++) {
                 const range = Math.max(...vals) - Math.min(...vals);
-                if (range < 1e-6) return n;
+                if (range < 1e-6) return n; // absolute: covers zero polynomial / near-zero diffs
+                const scale = Math.max(...vals.map(v => Math.abs(v)));
+                if (range / scale < 1e-5) return n; // relative: covers large-coeff polys
                 const next = [];
                 for (let i = 1; i < vals.length; i++) next.push(vals[i] - vals[i - 1]);
                 vals = next;
                 if (vals.length === 0) return n;
             }
         } catch(e) { /* fall through */ }
-        return 10;
+        return 15; // degree > 14, well above the limit
     }
 
-    // Sample 400 points x ∈ [-1, 11]; null marks discontinuities / off-range values
-    static getCurvePoints(evalFn) {
+    // Sample points across the full grid range; null marks discontinuities / off-range values
+    static getCurvePoints(evalFn, gridSize = 10) {
         const pts = [];
-        const steps = 400;
+        const xMin = -1;
+        const xMax = gridSize;
+        const steps = Math.max(400, gridSize * 30);
         for (let i = 0; i <= steps; i++) {
-            const x = -1 + (12 / steps) * i;
+            const x = xMin + ((xMax - xMin) / steps) * i;
             try {
                 const y = evalFn(x);
                 pts.push(isFinite(y) ? { x, y } : null);
@@ -262,9 +342,9 @@ class Renderer {
     constructor(canvasId) {
         this.canvas = document.getElementById(canvasId);
         this.ctx = this.canvas.getContext('2d');
-        this.gridSize = 10;
+        this.gridSize = 10; // default, will be updated by game
         this.pad = 1;
-        this.displayUnits = this.gridSize + 2 * this.pad; // 12
+        this.displayUnits = (this.gridSize - 1) + 2 * this.pad; // 11
 
         this.pan = { x: 0, y: 0 };
         this.dragging = false;
@@ -286,15 +366,17 @@ class Renderer {
     }
 
     w2c(wx, wy) {
+        const lastCoord = this.gridSize - 1;
         return {
             cx: (wx + this.pad) * this.unit + this.pan.x,
-            cy: (this.gridSize + this.pad - wy) * this.unit + this.pan.y
+            cy: (lastCoord + this.pad - wy) * this.unit + this.pan.y
         };
     }
 
     c2w(cx, cy) {
+        const lastCoord = this.gridSize - 1;
         const wx = (cx - this.pan.x) / this.unit - this.pad;
-        const wy = this.gridSize + this.pad - (cy - this.pan.y) / this.unit;
+        const wy = lastCoord + this.pad - (cy - this.pan.y) / this.unit;
         return { x: Math.round(wx), y: Math.round(wy) };
     }
 
@@ -327,7 +409,8 @@ class Renderer {
 
     drawGrid() {
         const ctx = this.ctx;
-        for (let i = 0; i <= this.gridSize; i++) {
+        const lastCoord = this.gridSize - 1;
+        for (let i = 0; i <= lastCoord; i++) {
             const { cx }  = this.w2c(i, 0);
             ctx.beginPath(); ctx.moveTo(cx, 0); ctx.lineTo(cx, this.size);
             ctx.strokeStyle = i === 0 ? '#888' : '#e4e4e4';
@@ -345,12 +428,14 @@ class Renderer {
     drawAxes() {
         const ctx = this.ctx;
         const arrowSz = Math.max(6, this.unit * 0.18);
+        const lastCoord = this.gridSize - 1;
 
         const { cx: ax,  cy: ayBot } = this.w2c(0, -0.3);
-        const { cx: ax2, cy: ayTop } = this.w2c(0, this.gridSize + 0.5);
+        const { cx: ax2, cy: ayTop } = this.w2c(0, lastCoord + 0.5);
         ctx.save();
         ctx.strokeStyle = '#333'; ctx.lineWidth = 2.5;
         ctx.beginPath(); ctx.moveTo(ax, ayBot); ctx.lineTo(ax2, ayTop); ctx.stroke();
+
         ctx.fillStyle = '#333';
         ctx.beginPath();
         ctx.moveTo(ax2, ayTop);
@@ -362,7 +447,7 @@ class Renderer {
         ctx.fillText('y', ax2, ayTop - 4);
 
         const { cx: axLeft, cy: ay  } = this.w2c(-0.3, 0);
-        const { cx: axRight, cy: ay2 } = this.w2c(this.gridSize + 0.5, 0);
+        const { cx: axRight, cy: ay2 } = this.w2c(lastCoord + 0.5, 0);
         ctx.beginPath(); ctx.moveTo(axLeft, ay); ctx.lineTo(axRight, ay2); ctx.stroke();
         ctx.beginPath();
         ctx.moveTo(axRight, ay2);
@@ -376,22 +461,22 @@ class Renderer {
 
     drawLabels() {
         const ctx = this.ctx;
-        const fs = Math.max(9, Math.floor(this.unit * 0.28));
+        const fs  = Math.max(9, Math.floor(this.unit * 0.28));
+        const off = Math.max(5, Math.round(this.unit * 0.28));
+        const lastCoord = this.gridSize - 1;
         ctx.save();
         ctx.font = `${fs}px Arial`;
         ctx.fillStyle = '#666';
 
-        for (let i = 0; i <= this.gridSize; i++) {
+        for (let i = 0; i <= lastCoord; i++) {
             const { cx, cy: yAxis } = this.w2c(i, 0);
-            // numbers below x-axis — extra offset so apples don't cover them
             ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-            ctx.fillText(i, cx, yAxis + 14);
+            ctx.fillText(i, cx, yAxis + off);
 
             if (i > 0) {
                 const { cx: xAxis, cy } = this.w2c(0, i);
-                // numbers left of y-axis
                 ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-                ctx.fillText(i, xAxis - 10, cy);
+                ctx.fillText(i, xAxis - off, cy);
             }
         }
         ctx.restore();
@@ -399,17 +484,18 @@ class Renderer {
 
     drawApples(apples, hoveredX = null, hoveredY = null) {
         const ctx = this.ctx;
-        const r = Math.max(5, this.unit * 0.17);
+        const baseSize = Math.max(10, Math.round(this.unit * 0.38));
+        const crossR   = Math.max(4, this.unit * 0.13);
 
         apples.forEach(apple => {
             const { cx, cy } = this.w2c(apple.x, apple.y);
             if (apple.eaten) {
                 const color = apple.eatenBy === 1 ? '#4a9eff' : '#e24a4a';
-                const d = r * 0.75;
+                const d = crossR;
                 ctx.save();
-                ctx.globalAlpha = 0.5;
+                ctx.globalAlpha = 0.55;
                 ctx.strokeStyle = color;
-                ctx.lineWidth = Math.max(2, r * 0.5);
+                ctx.lineWidth = Math.max(1.5, crossR * 0.55);
                 ctx.lineCap = 'round';
                 ctx.beginPath();
                 ctx.moveTo(cx - d, cy - d); ctx.lineTo(cx + d, cy + d);
@@ -418,19 +504,16 @@ class Renderer {
                 ctx.restore();
             } else {
                 const isHov = apple.x === hoveredX && apple.y === hoveredY;
-                const rad   = isHov ? r * 1.35 : r;
+                const sz = isHov ? Math.round(baseSize * 1.3) : baseSize;
                 ctx.save();
-                ctx.shadowColor = '#ff3300';
-                ctx.shadowBlur  = isHov ? 16 : 9;
-                ctx.fillStyle   = isHov ? '#ff1a1a' : '#ff4444';
-                ctx.beginPath();
-                ctx.arc(cx, cy, rad, 0, 2 * Math.PI);
-                ctx.fill();
-                ctx.shadowBlur = 0;
-                ctx.fillStyle  = 'rgba(255,255,255,0.45)';
-                ctx.beginPath();
-                ctx.arc(cx - rad * 0.28, cy - rad * 0.28, rad * 0.28, 0, 2 * Math.PI);
-                ctx.fill();
+                ctx.font = `${sz}px serif`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                if (isHov) {
+                    ctx.shadowColor = 'rgba(255, 60, 0, 0.8)';
+                    ctx.shadowBlur  = 14;
+                }
+                ctx.fillText('🍎', cx, cy);
                 ctx.restore();
             }
         });
@@ -614,14 +697,17 @@ class GameLogic {
         });
     }
 
-    startGameMultiplayer(creatorName, joinerName, myPlayerNum, appleDensity, timePerTurn, applePositions) {
-        this.startGameWithConfig(creatorName, joinerName, myPlayerNum, appleDensity, timePerTurn, applePositions);
+    startGameMultiplayer(creatorName, joinerName, myPlayerNum, appleDensity, timePerTurn, applePositions, gridSize) {
+        this.startGameWithConfig(creatorName, joinerName, myPlayerNum, appleDensity, timePerTurn, applePositions, gridSize);
     }
 
-    startGameWithConfig(player1Name, player2Name, myPlayerNum, appleDensity, timePerTurn, applePositions) {
-        this.gameConfig = { player1Name, player2Name, myPlayerNum, appleDensity, timePerTurn };
-        this.gameState  = new GameState(player1Name, player2Name, appleDensity, timePerTurn, applePositions);
+    startGameWithConfig(player1Name, player2Name, myPlayerNum, appleDensity, timePerTurn, applePositions, gridSize = 10) {
+        this.gameConfig = { player1Name, player2Name, myPlayerNum, appleDensity, timePerTurn, gridSize };
+        this.gameState  = new GameState(player1Name, player2Name, appleDensity, timePerTurn, applePositions, gridSize);
         this.renderer   = new Renderer('gameCanvas');
+        this.renderer.gridSize = this.gameState.gridSize;
+        this.renderer.displayUnits = (this.renderer.gridSize - 1) + 2 * this.renderer.pad;
+        this.renderer.resize();
 
         // Show only my input panel (if player)
         const myInput  = document.getElementById(`player${myPlayerNum}Input`);
@@ -701,6 +787,7 @@ class GameLogic {
         document.getElementById('summaryScreen').classList.add('hidden');
         document.getElementById('reviewBanner').classList.add('hidden');
         document.getElementById('gameScreen').classList.remove('hidden');
+        document.body.classList.add('game-active');
 
         this.updateApplesRemaining();
         this.updateHeaderStats();
@@ -762,7 +849,7 @@ class GameLogic {
         try {
             if (!equation.trim()) throw new Error('Please enter an equation');
 
-            const lineData = InputParser.parse(equation);
+            const lineData = InputParser.parse(equation, this.gameState.gridSize);
             const player   = playerNum === 1 ? this.gameState.player1 : this.gameState.player2;
             player.currentLine = lineData;
 
@@ -990,16 +1077,23 @@ class GameLogic {
     showSummaryScreen(winner, loser, reason, isDraw = false) {
         let reasonText = '';
         if (reason === 'surrender' || reason === 'exit') {
-            reasonText = `${loser.name} ${reason === 'exit' ? 'left early' : 'surrendered'}`;
+            const wasLeading = loser.score > winner.score;
+            if (reason === 'exit') {
+                reasonText = wasLeading
+                    ? `${loser.name} left while leading — a Pyrrhic retreat.`
+                    : `${loser.name} left early.`;
+            } else {
+                reasonText = wasLeading
+                    ? `${loser.name} surrendered while leading — a noble concession.`
+                    : `${loser.name} surrendered.`;
+            }
         } else if (reason === 'majority' || reason === 'apples_cleared') {
             reasonText = `All apples eaten!`;
         } else if (reason === 'timeout') {
             reasonText = 'Time ran out';
         }
 
-        const noteText = (reason === 'surrender' || reason === 'exit') && loser.score > winner.score
-            ? `<div class="summary-note">⚠️ ${loser.name} was leading but ended early.</div>`
-            : '';
+        const noteText = '';
 
         const elapsed   = this.timerManager.formatTime(this.gameState.getElapsedSeconds());
         const remaining = this.gameState.getRemainingApples().length;
@@ -1040,14 +1134,14 @@ class GameLogic {
           ${noteText}
           <div class="sum-meta">⏱ Duration: <b>${elapsed}</b> &nbsp;|&nbsp; 🍎 Left: <b>${remaining}</b></div>
           <div class="sum-columns">
-            <div class="sum-col ${isP1Winner ? 'sum-col-winner' : ''}">
+            <div class="sum-col sum-col-p1 ${isP1Winner ? 'sum-col-winner' : 'sum-col-loser'}">
               <div class="sum-col-header">${renderAvatar(p1Av, 40)} <span>${p1.name}</span> <span class="host-badge">HOST</span>${currentPlayerNum === 1 ? ' <span class="you-badge">YOU</span>' : ''}${isP1Winner ? ' 👑' : ''}</div>
               <div class="sum-stat">⭐ Points: <b>${Math.round(p1.score)}</b></div>
               <div class="sum-stat">🍎 Apples: <b>${p1.eatenApples.length}</b></div>
               <div class="sum-stat">📝 Expressions: <b>${p1.expressionsUsed}</b></div>
               <div class="sum-log">${buildLog(p1)}</div>
             </div>
-            <div class="sum-col ${!isP1Winner ? 'sum-col-winner' : ''}">
+            <div class="sum-col sum-col-p2 ${!isP1Winner ? 'sum-col-winner' : 'sum-col-loser'}">
               <div class="sum-col-header">${renderAvatar(p2Av, 40)} <span>${p2.name}</span>${currentPlayerNum === 2 ? ' <span class="you-badge">YOU</span>' : ''}${isP1Winner ? '' : ' 👑'}</div>
               <div class="sum-stat">⭐ Points: <b>${Math.round(p2.score)}</b></div>
               <div class="sum-stat">🍎 Apples: <b>${p2.eatenApples.length}</b></div>
@@ -1058,6 +1152,7 @@ class GameLogic {
 
         document.getElementById('gameScreen').classList.add('hidden');
         document.getElementById('summaryScreen').classList.remove('hidden');
+        document.body.classList.remove('game-active');
 
         // Show "Return to Room" only in multiplayer, but hide for guests
         const returnBtn = document.getElementById('returnToRoomBtn');
@@ -1080,24 +1175,121 @@ function toggleTheme() {
     const next = current === 'dark' ? 'light' : 'dark';
     body.setAttribute('data-theme', next);
     localStorage.setItem('polyapple_theme', next);
-    const btn = document.getElementById('themeToggleBtn');
-    const lbl = document.getElementById('themeLabel');
-    if (btn) btn.textContent = next === 'dark' ? '☀️' : '🌙';
-    if (lbl) lbl.textContent = next === 'dark' ? 'Dark' : 'Light';
+    const chk      = document.getElementById('themeToggleCheck');
+    const icon     = document.getElementById('themeIcon');
+    const gameIcon = document.getElementById('gameThemeIcon');
+    if (chk)      chk.checked = (next === 'light');
+    if (icon)     icon.textContent     = next === 'light' ? '☀️' : '🌙';
+    if (gameIcon) gameIcon.textContent = next === 'light' ? '☀️' : '🌙';
+    // Trigger smooth sun/moon transition
+    bgAnimationState.themeTransition = { start: Date.now(), from: current };
+}
+
+function setWaitingMessage(text) {
+    const textEl = document.getElementById('waitingText');
+    if (textEl) textEl.textContent = text;
+    // Show/hide hourglass based on context
+    const hg = document.getElementById('waitingHourglass');
+    if (hg) hg.style.display = text.includes('Start') ? 'none' : 'inline-block';
 }
 
 window.addEventListener('DOMContentLoaded', () => {
     const saved = localStorage.getItem('polyapple_theme') || 'dark';
     document.body.setAttribute('data-theme', saved);
-    const btn = document.getElementById('themeToggleBtn');
-    const lbl = document.getElementById('themeLabel');
-    if (btn) btn.textContent = saved === 'dark' ? '☀️' : '🌙';
-    if (lbl) lbl.textContent = saved === 'dark' ? 'Dark' : 'Light';
+    const chk      = document.getElementById('themeToggleCheck');
+    const icon     = document.getElementById('themeIcon');
+    const gameIcon = document.getElementById('gameThemeIcon');
+    if (chk)      chk.checked = (saved === 'light');
+    if (icon)     icon.textContent     = saved === 'light' ? '☀️' : '🌙';
+    if (gameIcon) gameIcon.textContent = saved === 'light' ? '☀️' : '🌙';
+    // Init settings tags
+    updateSettingsTags();
+    // Init animated background
+    initBgCanvas();
 });
+
+// ===========================
+// SETTINGS PANEL
+// ===========================
+function toggleSettings() {
+    const body   = document.getElementById('settingsBody');
+    const header = document.querySelector('.settings-header');
+    if (!body) return;
+    const isOpen = body.classList.contains('open');
+    body.classList.toggle('open', !isOpen);
+    if (header) header.classList.toggle('open-header', !isOpen);
+}
+
+const MODE_LABELS = { free: 'Free Play', balanced: 'Balanced', pro: 'Poly Masters' };
+
+// SVG icons for config tags
+const TAG_ICONS = {
+    grid: `<svg class="tag-icon" viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><line x1="3" y1="0" x2="3" y2="9"/><line x1="6" y1="0" x2="6" y2="9"/><line x1="0" y1="3" x2="9" y2="3"/><line x1="0" y1="6" x2="9" y2="6"/></svg>`,
+    apple: `<svg class="tag-icon" viewBox="0 0 12 13" fill="currentColor"><path d="M10.3 5.2c-.1-.1-1.3-.7-1.3-2.1 0-1.2.8-1.8.9-1.9l.1-.1-.1-.1C9.5.8 9 .6 8.5.6c-.8 0-1.3.5-1.6.5S6 .6 5.3.6C4 .6 2.6 1.6 2.6 3.7c0 1.3.5 2.7 1.1 3.6.5.8 1 1.4 1.7 1.4.6 0 .9-.4 1.7-.4s.9.4 1.7.4 1.2-.6 1.6-1.3c.3-.4.4-.8.5-.9l.1-.2-.1-.1c-.3-.2-.8-.6-.9-1zm-2.4-4c.2-.3.4-.7.4-1.1v-.1h-.1c-.5 0-1 .3-1.3.7-.2.3-.4.7-.4 1.1v.1h.1c.5 0 1-.3 1.3-.7z"/></svg>`,
+    clock: `<svg class="tag-icon" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="6" cy="6" r="5"/><polyline points="6,3 6,6 8,7.5"/></svg>`,
+    bolt: `<svg class="tag-icon" viewBox="0 0 9 12" fill="currentColor"><polygon points="5.5,0 1,6.5 4.5,6.5 3.5,12 9,5.5 5.5,5.5"/></svg>`
+};
+
+function makeTag(icon, text) {
+    return `${icon}<span>${text}</span>`;
+}
+
+function updateSettingsTags() {
+    const densityEl  = document.getElementById('density');
+    const gridSizeEl = document.getElementById('gridSize');
+    const timeEl     = document.getElementById('time');
+    const modeEl     = document.getElementById('mode');
+    if (!densityEl || !gridSizeEl || !timeEl || !modeEl) return;
+
+    const pct   = parseInt(densityEl.value); // 0-100
+    const gs    = parseInt(gridSizeEl.value) || 10;
+    const count = Math.floor((gs * gs) * (pct / 100));
+    const secs  = parseInt(timeEl.value) || 60;
+    const mode  = modeEl.value;
+
+    // Set CSS custom property so the ::webkit-slider-runnable-track pseudo-element can read it
+    const min = parseInt(densityEl.min) || 0;
+    const max = parseInt(densityEl.max) || 100;
+    const fillPct = ((pct - min) / (max - min)) * 100;
+    densityEl.style.setProperty('--slider-fill', fillPct.toFixed(1) + '%');
+
+    const tagG = document.getElementById('tagGrid');
+    const tagD = document.getElementById('tagDensity');
+    const tagT = document.getElementById('tagTime');
+    const tagM = document.getElementById('tagMode');
+    if (tagG) tagG.innerHTML = makeTag(TAG_ICONS.grid,  `${gs}×${gs}`);
+    if (tagD) tagD.innerHTML = makeTag(TAG_ICONS.apple, `${count} Apples`);
+    if (tagT) tagT.innerHTML = makeTag(TAG_ICONS.clock, `${secs}s`);
+    if (tagM) tagM.innerHTML = makeTag(TAG_ICONS.bolt,  MODE_LABELS[mode] || mode);
+
+    const densityValEl = document.getElementById('densityVal');
+    const densityPctEl = document.getElementById('densityPct');
+    if (densityValEl) densityValEl.textContent = count;
+    if (densityPctEl) densityPctEl.textContent = `(${pct}%)`;
+}
+
+function populateConfigTags(config, containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    const cfg = config || {};
+    const gs    = cfg.gridSize || 10;
+    const count = cfg.appleDensity != null ? Math.round(cfg.appleDensity * (gs * gs)) : 50;
+    const secs  = cfg.timePerTurn  || 60;
+    const mode  = cfg.mode         || 'balanced';
+    const modeLabel = { free: 'Free Play', balanced: 'Balanced', pro: 'Poly Masters' }[mode] || mode;
+
+    container.innerHTML = `
+        <span class="rtag rtag-grid">${makeTag(TAG_ICONS.grid, `${gs}×${gs}`)}</span>
+        <span class="rtag rtag-density">${makeTag(TAG_ICONS.apple, `${count} Apples`)}</span>
+        <span class="rtag rtag-time">${makeTag(TAG_ICONS.clock, `${secs}s`)}</span>
+        <span class="rtag rtag-mode">${makeTag(TAG_ICONS.bolt, modeLabel)}</span>
+    `;
+}
 
 // ===========================
 // CONSTANTS & GLOBALS
 // ===========================
+const DEFAULT_GRID_SIZE = 10;
 function generateUUID() {
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
         var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
@@ -1127,14 +1319,16 @@ function switchLobbyTab(tab) {
     const btns      = document.querySelectorAll('.tab-btn');
 
     if (tab === 'create') {
-        createTab.classList.add('active');  joinTab.classList.remove('active');
-        btns[0].classList.add('active');    btns[1].classList.remove('active');
+        createTab.classList.add('active');   createTab.classList.remove('hidden');
+        joinTab.classList.remove('active');  joinTab.classList.add('hidden');
+        btns[0].classList.add('active');     btns[1].classList.remove('active');
         stopRoomRefresh();
     } else {
-        joinTab.classList.add('active');    createTab.classList.remove('active');
-        btns[1].classList.add('active');    btns[0].classList.remove('active');
+        joinTab.classList.add('active');     joinTab.classList.remove('hidden');
+        createTab.classList.remove('active'); createTab.classList.add('hidden');
+        btns[1].classList.add('active');     btns[0].classList.remove('active');
         startRoomRefresh();
-        
+
         // Setup search input listener if not already set
         const searchInput = document.getElementById('roomSearchInput');
         if (searchInput && !searchInput.dataset.listenerSet) {
@@ -1149,52 +1343,125 @@ let gameInstance = {
     roomCode: null,
     playerRole: 'creator', // 'creator' | 'joiner'
     myPlayerNum: 1,        // 1 = creator, 2 = joiner
+    myPlayerId: null,      // Player ID (UUID or socket.id)
     myName: null,
     myAvatarIndex: 0,
     opponentName: null,
     opponentId: null,
     opponentAvatarIndex: 0,
     isJoining: false,
-    roomRefreshInterval: null
+    roomRefreshInterval: null,
+    currentConfig: null
 };
 
 function copyRoomCode() {
     const code = gameInstance.roomCode;
     if (!code) return;
-    const btn = document.getElementById('copyRoomCodeBtn');
+    const toast = document.getElementById('copyToast');
     navigator.clipboard.writeText(code)
-        .then(() => flashBtn(btn, '✓ Copied!', '#4caf50'))
-        .catch(() => {
-            const ta = document.createElement('textarea');
-            ta.value = code; document.body.appendChild(ta); ta.select();
-            document.execCommand('copy'); document.body.removeChild(ta);
-            flashBtn(btn, '✓ Copied!', '#4caf50');
+        .then(() => {
+            if (toast) {
+                toast.classList.add('show');
+                setTimeout(() => toast.classList.remove('show'), 2000);
+            }
         });
-}
-
-function flashBtn(btn, text, bg) {
-    const prev = btn.textContent;
-    btn.textContent = text; btn.style.background = bg; btn.style.color = 'white';
-    setTimeout(() => { btn.textContent = prev; btn.style.background = ''; btn.style.color = ''; }, 2000);
 }
 
 function showWaitingScreen(roomCode, message) {
     document.querySelector('.lobby-tabs').style.display = 'none';
-    document.getElementById('createTab').classList.remove('active');
-    document.getElementById('joinTab').classList.remove('active');
-    const ws = document.getElementById('waitingScreen');
-    ws.classList.remove('hidden'); ws.classList.add('active');
-    document.getElementById('roomCodeDisplay').textContent = roomCode;
-    document.getElementById('waitingMessage').textContent  = message;
+    const createTab = document.getElementById('createTab');
+    const joinTab   = document.getElementById('joinTab');
+    const ws        = document.getElementById('waitingScreen');
 
-    const avatarEl = document.getElementById('waitingAvatar');
-    const nameEl   = document.getElementById('waitingPlayerName');
-    if (avatarEl) avatarEl.innerHTML = renderAvatar(gameInstance.myAvatarIndex, 44);
-    if (nameEl)   nameEl.textContent = gameInstance.myName || 'You';
+    if (createTab) { createTab.classList.add('hidden'); createTab.classList.remove('active'); }
+    if (joinTab)   { joinTab.classList.add('hidden');   joinTab.classList.remove('active');   }
+    
+    if (ws) {
+        ws.classList.remove('hidden'); 
+        ws.classList.add('active');
+    }
+    
+    const codeEl = document.getElementById('roomCodeDisplay');
+    if (codeEl) {
+        // Find the text node that contains the room code (usually the first child)
+        for (let node of codeEl.childNodes) {
+            if (node.nodeType === Node.TEXT_NODE) {
+                node.textContent = roomCode + ' ';
+                break;
+            }
+        }
+    }
+    
+    setWaitingMessage(message);
 
-    // Start button only for creator
+    updateWaitingSlots();
+    populateConfigTags(gameInstance.currentConfig, 'waitingConfigTags');
+}
+
+function updateWaitingSlots() {
+    const hostSlot  = document.getElementById('slotHost');
+    const guestCont = document.getElementById('slotGuestContainer');
+    if (!hostSlot || !guestCont) return;
+
+    const isMeHost = (gameInstance.playerRole === 'creator');
+
+    // Resolve Host data
+    const hostName = isMeHost ? (gameInstance.myName || 'You') : (gameInstance.opponentName || 'Host');
+    const hostAvatarIndex = isMeHost ? (gameInstance.myAvatarIndex || 0) : (gameInstance.opponentAvatarIndex || 0);
+
+    hostSlot.className = `waiting-player-card vibe-${hostAvatarIndex}`;
+    hostSlot.innerHTML = `
+        ${renderAvatar(hostAvatarIndex, 48)}
+        <div>
+            <div style="font-weight:800;font-size:1.1em;color:var(--text-primary);">
+                ${hostName}
+                <span class="wb-tag wb-host">HOST</span>
+                ${isMeHost ? '<span class="wb-tag wb-you">YOU</span>' : ''}
+            </div>
+            <div class="muted-text" style="font-size:0.85em;">Room Owner</div>
+        </div>
+    `;
+
+    // Resolve Guest data
+    const hasGuest = isMeHost ? !!gameInstance.opponentName : true;
+
+    if (hasGuest) {
+        const guestName = isMeHost ? gameInstance.opponentName : (gameInstance.myName || 'You');
+        const guestAvatarIndex = isMeHost ? (gameInstance.opponentAvatarIndex || 0) : (gameInstance.myAvatarIndex || 0);
+        const isMeGuest = !isMeHost;
+
+        guestCont.innerHTML = `
+            <div class="waiting-player-card vibe-${guestAvatarIndex}">
+                ${renderAvatar(guestAvatarIndex, 48)}
+                <div>
+                    <div style="font-weight:800;font-size:1.1em;color:var(--text-primary);">
+                        ${guestName}
+                        ${isMeGuest ? '<span class="wb-tag wb-you">YOU</span>' : ''}
+                    </div>
+                    <div class="muted-text" style="font-size:0.85em;">Guest</div>
+                </div>
+            </div>
+        `;
+    } else {
+        guestCont.innerHTML = `<div class="waiting-placeholder">Waiting for opponent to join…</div>`;
+    }
+
+    // Update button text and handler based on role
+    const cancelBtn = document.querySelector('.btn-cancel');
+    if (cancelBtn) {
+        if (isMeHost) {
+            cancelBtn.textContent = '✕ Cancel Room';
+            cancelBtn.onclick = cancelRoom;
+        } else {
+            cancelBtn.textContent = '← Exit Room';
+            cancelBtn.onclick = exitRoom;
+        }
+    }
+
     const startBtn = document.getElementById('startGameBtn');
-    if (startBtn) startBtn.style.display = 'none';
+    if (startBtn) {
+        startBtn.style.display = (gameInstance.playerRole === 'creator' && gameInstance.opponentName) ? 'block' : 'none';
+    }
 }
 
 function runCountdown(from, onDone) {
@@ -1241,13 +1508,20 @@ function createRoom(playerName) {
     gameInstance.myName = playerName;
     gameInstance.myAvatarIndex = avatarIndex;
 
+    const pct = parseInt(document.getElementById('density').value);
+    const gs  = parseInt(document.getElementById('gridSize').value);
+    const config = {
+        appleDensity: pct / 100,
+        gridSize: gs,
+        timePerTurn:  parseInt(document.getElementById('time').value),
+        mode: document.getElementById('mode')?.value || 'balanced'
+    };
+    gameInstance.currentConfig = config;
+
     socket.emit('createRoom', {
         name: playerName,
         avatarIndex,
-        config: {
-            appleDensity: parseFloat(document.getElementById('density').value),
-            timePerTurn:  parseInt(document.getElementById('time').value)
-        },
+        config: config,
         playerId
     });
 }
@@ -1257,6 +1531,7 @@ socket.on('roomCreated', (data) => {
     gameInstance.isMultiplayer = true;
     gameInstance.playerRole  = 'creator';
     gameInstance.myPlayerNum = 1;
+    gameInstance.myPlayerId  = playerId;
     gameInstance.isJoining   = false;
     document.getElementById('createRoomForm').reset();
     showWaitingScreen(data.roomCode, 'Waiting for opponent to join…');
@@ -1322,15 +1597,30 @@ function renderRooms() {
             btn   = `<button class="btn btn-secondary" style="font-size:0.85em;padding:7px 12px;" onclick="event.stopPropagation();viewGameAsGuest('${r.code}')">👁 View</button>`;
             badge = `<span style="font-size:0.75em;color:#e74c3c;font-weight:600;">● Live</span>`;
         } else {
-            // 'full': room is full but not yet started, or game just ended
             btn   = '';
             badge = `<span style="font-size:0.75em;color:#c0392b;font-weight:600;">● Full</span>`;
         }
+
+        // Config tags
+        const cfg   = r.config || {};
+        const gs    = cfg.gridSize || 10;
+        const count = cfg.appleDensity != null ? Math.round(cfg.appleDensity * (gs * gs)) : 50;
+        const secs  = cfg.timePerTurn  || 60;
+        const mode  = cfg.mode         || 'balanced';
+        const modeLabel = { free: 'Free Play', balanced: 'Balanced', pro: 'Poly Masters' }[mode] || mode;
+        const cfgTags = `<div class="room-config-tags">
+            <span class="rtag rtag-grid">${makeTag(TAG_ICONS.grid, `${gs}\u00d7${gs}`)}</span>
+            <span class="rtag rtag-density">${makeTag(TAG_ICONS.apple, `${count} Apples`)}</span>
+            <span class="rtag rtag-time">${makeTag(TAG_ICONS.clock, `${secs}s`)}</span>
+            <span class="rtag rtag-mode">${makeTag(TAG_ICONS.bolt, modeLabel)}</span>
+        </div>`;
+
         return `
             <div class="room-item">
                 <div class="room-info">
                     <div style="font-weight:600;display:flex;align-items:center;gap:6px;">Room: ${r.code} ${badge}</div>
-                    <div style="font-size:0.9em;color:#666;">Host: ${r.creator}</div>
+                    <div class="muted-text" style="font-size:0.9em;">Host: ${r.creator}</div>
+                    ${cfgTags}
                 </div>
                 ${btn}
             </div>
@@ -1347,6 +1637,7 @@ function joinRoomWithCode(roomCode) {
     const avatarIndex = getRandomAvatarIndex();
     gameInstance.myName = name;
     gameInstance.myAvatarIndex = avatarIndex;
+    gameInstance.myPlayerId = playerId;
     gameInstance.isJoining   = true;
     gameInstance.playerRole  = 'joiner';
     gameInstance.myPlayerNum = 2;
@@ -1357,18 +1648,25 @@ function joinRoomWithCode(roomCode) {
 
 
 socket.on('playerJoined', (data) => {
-    gameInstance.opponentName        = data.joinerName;
-    gameInstance.opponentId          = data.joinerId;
-    gameInstance.opponentAvatarIndex = data.joinerAvatarIndex ?? 0;
-    gameInstance.isMultiplayer = true;
+    // data.players is an array of {id, name, avatarIndex}
+    if (data.players) {
+        const opponent = data.players.find(p => p.id !== playerId);
+        if (opponent) {
+            gameInstance.opponentName        = opponent.name;
+            gameInstance.opponentId          = opponent.id;
+            gameInstance.opponentAvatarIndex = opponent.avatarIndex;
+            gameInstance.isMultiplayer       = true;
+        }
+    }
+
+    if (data.config) gameInstance.currentConfig = data.config;
 
     if (gameInstance.playerRole === 'joiner') {
         gameInstance.isJoining = false;
-        showWaitingScreen(gameInstance.roomCode, 'Waiting for opponent to start the game…');
+        showWaitingScreen(gameInstance.roomCode, 'Waiting for host to start the game…');
     } else if (gameInstance.playerRole === 'creator') {
-        const startBtn = document.getElementById('startGameBtn');
-        if (startBtn) startBtn.style.display = 'block';
-        document.getElementById('waitingMessage').textContent = `${data.joinerName} joined! Ready to start!`;
+        updateWaitingSlots();
+        setWaitingMessage(`${gameInstance.opponentName || 'Opponent'} is here! Start the duel?`);
     }
 });
 
@@ -1378,6 +1676,33 @@ socket.on('joinFailed', (error) => {
     gameInstance.playerRole = 'creator';
     alert('Failed to join: ' + error.message);
     showLobbyTab('join');
+});
+
+socket.on('hostPromoted', (data) => {
+    if (data.newHostId !== gameInstance.myPlayerId) return;
+
+    gameInstance.playerRole = 'creator';
+    gameInstance.myPlayerNum = 1;
+
+    const opp = (data.players || []).find(p => p.id !== data.newHostId);
+    if (opp) {
+        gameInstance.opponentName = opp.name;
+        gameInstance.opponentId = opp.id;
+        gameInstance.opponentAvatarIndex = opp.avatarIndex;
+    } else {
+        gameInstance.opponentName = null;
+        gameInstance.opponentId = null;
+        gameInstance.opponentAvatarIndex = null;
+    }
+
+    updateWaitingSlots();
+
+    if (!opp) setWaitingMessage('Waiting for opponent to join…');
+
+    const startBtn = document.getElementById('startGameBtn');
+    if (startBtn && !opp) startBtn.style.display = 'none';
+
+    showNotification('You are now the room host!');
 });
 
 function startGameWithOpponent() {
@@ -1400,7 +1725,8 @@ socket.on('gameStart', (data) => {
             myPlayerNum,
             data.appleDensity,
             data.timePerTurn,
-            data.applePositions
+            data.applePositions,
+            data.gridSize
         );
     });
 });
@@ -1470,6 +1796,19 @@ function cancelRoom() {
     gameInstance.isJoining  = false;
 }
 
+function exitRoom() {
+    // Joiner leaves the room
+    if (gameInstance.roomCode) socket.emit('playerLeft', { roomCode: gameInstance.roomCode });
+    showLobbyTab('join');
+    document.getElementById('createRoomForm').reset();
+    document.getElementById('playerNameJoin').value = '';
+    const searchInput = document.getElementById('roomSearchInput');
+    if (searchInput) searchInput.value = '';
+    gameInstance.roomCode   = null;
+    gameInstance.playerRole = 'creator';
+    gameInstance.isJoining  = false;
+}
+
 GameLogic.prototype.surrender = function() {
     if (gameInstance.isMultiplayer && gameInstance.roomCode) {
         socket.emit('playerLeft', { roomCode: gameInstance.roomCode, reason: 'surrender' });
@@ -1496,6 +1835,7 @@ function exitToLobby() {
     document.getElementById('gameScreen').classList.add('hidden');
     document.getElementById('reviewBanner').classList.add('hidden');
     document.getElementById('lobbyScreen').classList.remove('hidden');
+    document.body.classList.remove('game-active');
 
     // Clear history for next game
     const histLog = document.getElementById('historyLog');
@@ -1515,12 +1855,14 @@ function viewBoard() {
     document.getElementById('reviewBanner').classList.remove('hidden');
     document.getElementById('player1Input').classList.add('hidden');
     document.getElementById('player2Input').classList.add('hidden');
+    document.body.classList.add('game-active');
 }
 
 function backToSummary() {
     document.getElementById('gameScreen').classList.add('hidden');
     document.getElementById('reviewBanner').classList.add('hidden');
     document.getElementById('summaryScreen').classList.remove('hidden');
+    document.body.classList.remove('game-active');
 }
 
 // ── Return to room after game ends ────────────────
@@ -1550,21 +1892,33 @@ function returnToRoom() {
 }
 
 socket.on('returnedToRoomAck', (data) => {
+    // Refresh slots so my own card is visible
+    updateWaitingSlots();
     if (data.isCreator && data.bothBack) {
         const startBtn = document.getElementById('startGameBtn');
         if (startBtn) startBtn.style.display = 'block';
-        document.getElementById('waitingMessage').textContent = 'Opponent is back! Start a new game?';
+        setWaitingMessage('Opponent is back! Start a new game?');
     }
 });
 
-socket.on('playerReturnedToRoom', () => {
+socket.on('playerReturnedToRoom', (data) => {
+    // Sync opponent info from the returning player payload
+    if (data.player) {
+        const returnerIsMyOpponent = (gameInstance.playerRole === 'creator')
+            ? !data.player.isCreator
+            : data.player.isCreator;
+        if (returnerIsMyOpponent) {
+            gameInstance.opponentName        = data.player.name;
+            gameInstance.opponentAvatarIndex = data.player.avatarIndex ?? gameInstance.opponentAvatarIndex;
+        }
+    }
+    updateWaitingSlots();
     if (gameInstance.playerRole === 'creator') {
-        // Joiner came back — show Start button
         const startBtn = document.getElementById('startGameBtn');
         if (startBtn) startBtn.style.display = 'block';
-        document.getElementById('waitingMessage').textContent = 'Opponent is back! Start a new game?';
+        setWaitingMessage('Opponent is back! Start a new game?');
     } else {
-        document.getElementById('waitingMessage').textContent = 'Host is ready — waiting for them to start…';
+        setWaitingMessage('Host is ready — waiting for them to start…');
     }
 });
 
@@ -1579,6 +1933,7 @@ function hideAllScreens() {
     document.getElementById('summaryScreen').classList.add('hidden');
     document.getElementById('reviewBanner').classList.add('hidden');
     document.getElementById('gameScreen').classList.add('hidden');
+    document.body.classList.remove('game-active');
 }
 
 function viewGameAsGuest(roomCode) {
@@ -1602,7 +1957,8 @@ socket.on('guestGameSync', (data) => {
         0,
         data.appleDensity,
         data.timePerTurn,
-        data.applePositions
+        data.applePositions,
+        data.gridSize
     );
 
     // Override avatars with actual player data
@@ -1681,3 +2037,485 @@ function exitGuestView() {
     socket.emit('guestLeaveRoom');
     exitToLobby();
 }
+
+// ===========================
+// ANIMATED BACKGROUND
+// ===========================
+
+let bgAnimationState = {
+    apples: [],
+    curves: [],
+    arrows: [],
+    particles: [],
+    arrowCooldown: 250,
+    themeTransition: null,
+    animationId: null
+};
+
+function initBgCanvas() {
+    const canvas = document.getElementById('bgCanvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const BG = bgAnimationState;
+
+    function resize() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    // ── Helpers ──────────────────────────────────────
+    function mkApple(fromTop) {
+        const size = 45;
+        const speed = 2.5 + Math.random() * 2.0;
+        const angle = fromTop
+            ? Math.PI * 0.5 + (Math.random() - 0.5) * 0.6
+            : Math.random() * Math.PI * 2;
+        return {
+            x: Math.random() * (canvas.width - size * 2) + size,
+            y: fromTop ? -size - Math.random() * 60 : Math.random() * (canvas.height - size * 2 - 60) + 60 + size,
+            vx: Math.cos(angle) * speed,
+            vy: fromTop ? 3.5 + Math.random() * 2.5 : Math.sin(angle) * speed,
+            size,
+            rotation: Math.random() * Math.PI * 2,
+            rotSpeed: (Math.random() - 0.5) * 0.05,
+            opacity: 1,
+            dying: false,
+            dyingTick: 0
+        };
+    }
+
+    function mkArrow() {
+        const edge = Math.floor(Math.random() * 4);
+        const spd  = 10 + Math.random() * 6;
+        const w = canvas.width, h = canvas.height;
+        let x, y, vx, vy;
+        if (edge === 0)      { x = Math.random() * w; y = -20;  vx = (Math.random()-0.5)*spd*0.25; vy =  spd; }
+        else if (edge === 1) { x = w + 20; y = Math.random() * h; vx = -spd; vy = (Math.random()-0.5)*spd*0.25; }
+        else if (edge === 2) { x = Math.random() * w; y = h + 20; vx = (Math.random()-0.5)*spd*0.25; vy = -spd; }
+        else                 { x = -20; y = Math.random() * h; vx =  spd; vy = (Math.random()-0.5)*spd*0.25; }
+        return { x, y, vx, vy, done: false };
+    }
+
+    function spawnBurst(x, y, appleSize) {
+        // Expanding ring
+        BG.particles.push({ type: 'ring', x, y, life: 18, maxLife: 18, radius: appleSize * 0.3 });
+        // Apple chunks
+        for (let i = 0; i < 5; i++) {
+            const ang = (i / 5) * Math.PI * 2 + Math.random() * 0.5;
+            const spd = 3 + Math.random() * 4;
+            BG.particles.push({
+                type: 'chunk', x, y,
+                vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
+                life: 22 + Math.random() * 6, maxLife: 28,
+                size: 4 + Math.random() * 4,
+                color: Math.random() < 0.5 ? '#e53e3e' : '#c0392b'
+            });
+        }
+        // Leaf fragments
+        for (let i = 0; i < 2; i++) {
+            const ang = Math.random() * Math.PI * 2;
+            const spd = 2 + Math.random() * 3;
+            BG.particles.push({
+                type: 'leaf', x, y,
+                vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd - 1.5,
+                life: 20 + Math.random() * 8, maxLife: 28,
+                size: 7, rotation: Math.random() * Math.PI * 2,
+                rotSpeed: (Math.random() - 0.5) * 0.25
+            });
+        }
+        // Stem fragment
+        BG.particles.push({
+            type: 'chunk', x, y: y - appleSize * 0.3,
+            vx: (Math.random() - 0.5) * 2, vy: -3 - Math.random() * 2,
+            life: 18, maxLife: 18, size: 3, color: '#5d4037'
+        });
+    }
+
+    // ── Init ─────────────────────────────────────────
+    BG.apples = Array.from({ length: 10 }, () => mkApple(false));
+    BG.arrows = [];
+    BG.particles = [];
+    BG.arrowCooldown = 60 + Math.floor(Math.random() * 60);
+    BG.curves = Array.from({ length: 3 }, () => ({
+        offset: Math.random() * canvas.width,
+        amplitude: 30 + Math.random() * 40,
+        frequency: 0.002 + Math.random() * 0.003,
+        phase: Math.random() * Math.PI * 2,
+        speed: 0.3 + Math.random() * 0.7
+    }));
+
+    // ── Draw functions ────────────────────────────────
+    function drawBackground() {
+        const isDark = document.body.dataset.theme !== 'light';
+        if (isDark) {
+            const g = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+            g.addColorStop(0, '#2d3748');
+            g.addColorStop(1, '#4a5568');
+            ctx.fillStyle = g;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        } else {
+            // Vintage parchment + botanical gradient
+            const g = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+            g.addColorStop(0,    '#ede0c4'); // warm parchment
+            g.addColorStop(0.28, '#cfddb0'); // sage green
+            g.addColorStop(0.55, '#b8cfe0'); // muted sky
+            g.addColorStop(0.78, '#d5c4e8'); // soft lavender
+            g.addColorStop(1,    '#e8d4b8'); // warm peach
+            ctx.fillStyle = g;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            // Subtle warm overlay (parchment texture feel)
+            ctx.fillStyle = 'rgba(160,120,60,0.04)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            drawVineDecor();
+        }
+    }
+
+    function drawVineDecor() {
+        const stem = 'rgba(100,72,40,0.13)';
+        const leaf = 'rgba(65,105,48,0.11)';
+        ctx.save();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = stem;
+        ctx.lineCap = 'round';
+
+        function vineCorner(ox, oy, sx, sy) {
+            // Main arcing stem
+            ctx.beginPath();
+            ctx.moveTo(ox, oy);
+            ctx.bezierCurveTo(ox + sx*40, oy + sy*100, ox + sx*100, oy + sy*40, ox + sx*160, oy + sy*18);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(ox, oy);
+            ctx.bezierCurveTo(ox + sx*100, oy + sy*40, ox + sx*40, oy + sy*100, ox + sx*18, oy + sy*160);
+            ctx.stroke();
+            // Small tendrils
+            ctx.lineWidth = 1.2;
+            ctx.strokeStyle = 'rgba(80,110,50,0.10)';
+            ctx.beginPath();
+            ctx.moveTo(ox + sx*55, oy + sy*55);
+            ctx.quadraticCurveTo(ox + sx*80, oy + sy*35, ox + sx*70, oy + sy*20);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(ox + sx*55, oy + sy*55);
+            ctx.quadraticCurveTo(ox + sx*35, oy + sy*80, ox + sx*20, oy + sy*70);
+            ctx.stroke();
+            // Leaves (ellipses)
+            ctx.fillStyle = leaf;
+            [[ox+sx*72, oy+sy*32, -sy*0.6+sx*0.4],
+             [ox+sx*32, oy+sy*72,  sx*0.6-sy*0.4],
+             [ox+sx*55, oy+sy*55,  (sx+sy)*0.3],
+             [ox+sx*100, oy+sy*20, -sy*0.3],
+             [ox+sx*20, oy+sy*100, sx*0.3]].forEach(([lx, ly, ang]) => {
+                ctx.save();
+                ctx.translate(lx, ly);
+                ctx.rotate(ang);
+                ctx.beginPath();
+                ctx.ellipse(0, 0, 13, 6, 0, 0, Math.PI*2);
+                ctx.fill();
+                ctx.restore();
+            });
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = stem;
+        }
+
+        const W = canvas.width, H = canvas.height;
+        vineCorner(0,  0,   1,  1);   // top-left
+        vineCorner(W,  0,  -1,  1);   // top-right
+        vineCorner(0,  H,   1, -1);   // bottom-left
+        vineCorner(W,  H,  -1, -1);   // bottom-right
+
+        // Sparse leaf scatter along edges
+        ctx.fillStyle = 'rgba(70,105,50,0.07)';
+        for (let i = 0; i < 6; i++) {
+            const lx = (i + 0.5) * (W / 6);
+            ctx.save(); ctx.translate(lx, 20 + Math.sin(lx*0.02)*8);
+            ctx.rotate(Math.sin(lx*0.015)*0.5);
+            ctx.beginPath(); ctx.ellipse(0,0,10,5,0,0,Math.PI*2); ctx.fill();
+            ctx.restore();
+            ctx.save(); ctx.translate(lx, H - 20 + Math.sin(lx*0.02)*8);
+            ctx.rotate(Math.sin(lx*0.015+1)*0.5 + Math.PI);
+            ctx.beginPath(); ctx.ellipse(0,0,10,5,0,0,Math.PI*2); ctx.fill();
+            ctx.restore();
+        }
+        ctx.restore();
+    }
+
+    function drawCurves() {
+        const isDark = document.body.dataset.theme !== 'light';
+        BG.curves.forEach(curve => {
+            if (isDark) {
+                curve.offset += curve.speed;
+                if (curve.offset > canvas.width) curve.offset = -100;
+                ctx.strokeStyle = 'rgba(139,92,246,0.15)';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                for (let x = 0; x < canvas.width + 100; x += 10) {
+                    const xv = x + curve.offset;
+                    const yv = canvas.height / 2 + curve.amplitude * Math.sin(xv * curve.frequency + curve.phase);
+                    x === 0 ? ctx.moveTo(xv, yv) : ctx.lineTo(xv, yv);
+                }
+                ctx.stroke();
+            } else {
+                // Gentle vine-like waves
+                curve.offset += curve.speed * 0.25;
+                if (curve.offset > canvas.width * 4) curve.offset = 0;
+                ctx.strokeStyle = 'rgba(80,115,55,0.09)';
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                for (let x = 0; x < canvas.width; x += 8) {
+                    const yv = canvas.height * (0.25 + curve.phase * 0.15)
+                        + curve.amplitude * 1.4 * Math.sin(x * curve.frequency * 0.8 + curve.phase + curve.offset * 0.004);
+                    x === 0 ? ctx.moveTo(x, yv) : ctx.lineTo(x, yv);
+                }
+                ctx.stroke();
+            }
+        });
+    }
+
+    function paintSun(time, scale, extraRot) {
+        const r = 45;
+        ctx.rotate(extraRot);
+        ctx.scale(scale, scale);
+        const glow = ctx.createRadialGradient(0, 0, r*0.7, 0, 0, r*2.2);
+        glow.addColorStop(0, 'rgba(255,215,0,0.35)');
+        glow.addColorStop(1, 'rgba(255,180,0,0)');
+        ctx.fillStyle = glow;
+        ctx.beginPath(); ctx.arc(0, 0, r*2.2, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = '#FFD000';
+        ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = 'rgba(255,245,150,0.5)';
+        ctx.beginPath(); ctx.arc(-8, -8, r*0.45, 0, Math.PI*2); ctx.fill();
+        ctx.strokeStyle = 'rgba(255,160,0,0.75)';
+        ctx.lineWidth = 3.5; ctx.lineCap = 'round';
+        for (let i = 0; i < 8; i++) {
+            const ang = (i/8)*Math.PI*2 + time;
+            ctx.beginPath();
+            ctx.moveTo(Math.cos(ang)*(r+10), Math.sin(ang)*(r+10));
+            ctx.lineTo(Math.cos(ang)*(r+28), Math.sin(ang)*(r+28));
+            ctx.stroke();
+        }
+    }
+
+    function paintMoon(scale, extraRot) {
+        const r = 45;
+        ctx.rotate(extraRot);
+        ctx.scale(scale, scale);
+        ctx.fillStyle = 'rgba(139,92,246,0.45)';
+        ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = '#2d3748';
+        ctx.beginPath(); ctx.arc(15, 0, r-5, 0, Math.PI*2); ctx.fill();
+    }
+
+    function drawSunMoon() {
+        const isDark = document.body.dataset.theme !== 'light';
+        const time   = Date.now() * 0.0002;
+        const trans  = BG.themeTransition;
+        const cx = 100, cy = 80;
+
+        if (!trans) {
+            // Steady state
+            ctx.save(); ctx.translate(cx, cy);
+            isDark ? paintMoon(1, 0) : paintSun(time, 1, 0);
+            ctx.restore();
+            return;
+        }
+
+        const progress = Math.min(1, (Date.now() - trans.start) / 600);
+        if (progress >= 1) { BG.themeTransition = null; }
+
+        const towardDark = (trans.from === 'light');
+
+        if (progress < 0.5) {
+            // Phase 1: old body shrinks + spins out (0→0.5)
+            const p = progress / 0.5;           // 0→1
+            const scale = 1 - p;
+            const rot   = p * Math.PI * 0.75;  // 0 → 135deg
+            ctx.save(); ctx.translate(cx, cy);
+            towardDark ? paintSun(time, scale, rot) : paintMoon(scale, -rot);
+            ctx.restore();
+        } else {
+            // Phase 2: new body grows + spins in (0.5→1)
+            const p = (progress - 0.5) / 0.5;  // 0→1
+            const scale = p;
+            const rot   = (1 - p) * Math.PI * 0.75; // 135deg → 0
+            ctx.save(); ctx.translate(cx, cy);
+            towardDark ? paintMoon(scale, rot) : paintSun(time, scale, -rot);
+            ctx.restore();
+        }
+    }
+
+    function drawApples() {
+        const POP_TICKS  = 5;
+        const FADE_TICKS = 20;
+        // Remove fully dead apples and spawn replacements
+        const dead = BG.apples.filter(a => a.dying && a.dyingTick > POP_TICKS + FADE_TICKS);
+        if (dead.length) {
+            BG.apples = BG.apples.filter(a => !(a.dying && a.dyingTick > POP_TICKS + FADE_TICKS));
+            const cap = Math.max(0, 13 - BG.apples.length);
+            const add = Math.min(dead.length * (Math.random() < 0.5 ? 2 : 1), cap, 3);
+            for (let i = 0; i < add; i++) BG.apples.push(mkApple(true));
+        }
+
+        // Update
+        BG.apples.forEach(apple => {
+            if (apple.dying) {
+                apple.dyingTick++;
+                if (apple.dyingTick > POP_TICKS) {
+                    apple.opacity = Math.max(0, 1 - (apple.dyingTick - POP_TICKS) / FADE_TICKS);
+                }
+                return;
+            }
+            apple.x += apple.vx; apple.y += apple.vy;
+            apple.rotation += apple.rotSpeed;
+            const h = apple.size / 2;
+            if (apple.x - h < 0)            { apple.vx =  Math.abs(apple.vx); apple.x = h; }
+            if (apple.x + h > canvas.width)  { apple.vx = -Math.abs(apple.vx); apple.x = canvas.width - h; }
+            if (apple.y - h < 60)            { apple.vy =  Math.abs(apple.vy); apple.y = 60 + h; }
+            if (apple.y + h > canvas.height) { apple.vy = -Math.abs(apple.vy); apple.y = canvas.height - h; }
+        });
+
+        // Draw
+        const isLightMode = document.body.dataset.theme === 'light';
+        BG.apples.forEach(apple => {
+            if (apple.opacity <= 0) return;
+            ctx.save();
+            ctx.translate(apple.x, apple.y);
+            ctx.rotate(apple.rotation);
+
+            if (apple.dying && apple.dyingTick <= POP_TICKS) {
+                // Pop flash: brief scale-up + white glow
+                const pop = 1 + (1 - apple.dyingTick / POP_TICKS) * 0.38;
+                const gr = ctx.createRadialGradient(0, 0, 0, 0, 0, apple.size * pop * 0.75);
+                gr.addColorStop(0, 'rgba(255,255,220,0.95)');
+                gr.addColorStop(1, 'rgba(255,240,160,0)');
+                ctx.fillStyle = gr;
+                ctx.beginPath(); ctx.arc(0, 0, apple.size * pop * 0.75, 0, Math.PI * 2); ctx.fill();
+                ctx.font = `${Math.round(apple.size * pop)}px Arial`;
+                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText('🍎', 0, 0);
+            } else {
+                ctx.globalAlpha = apple.opacity;
+                if (isLightMode) {
+                    const glow = ctx.createRadialGradient(0, 0, apple.size*0.2, 0, 0, apple.size*0.65);
+                    glow.addColorStop(0, 'rgba(255,120,60,0.38)');
+                    glow.addColorStop(1, 'rgba(255,80,30,0)');
+                    ctx.fillStyle = glow;
+                    ctx.beginPath(); ctx.arc(0, 0, apple.size*0.65, 0, Math.PI*2); ctx.fill();
+                }
+                ctx.font = `${apple.size}px Arial`;
+                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText('🍎', 0, 0);
+            }
+            ctx.restore();
+        });
+    }
+
+    function drawArrows() {
+        BG.arrowCooldown--;
+        if (BG.arrowCooldown <= 0) {
+            BG.arrows.push(mkArrow());
+            BG.arrows.push(mkArrow()); // always two arrows per cycle
+            if (Math.random() < 0.35) BG.arrows.push(mkArrow()); // occasional triple-shot
+            BG.arrowCooldown = 80 + Math.floor(Math.random() * 80);
+        }
+
+        const isDark = document.body.dataset.theme !== 'light';
+        const shaftColor = isDark ? 'rgba(210,175,90,0.9)' : 'rgba(130,80,30,0.9)';
+        const headColor  = isDark ? 'rgba(200,160,70,1)'   : 'rgba(110,60,20,1)';
+        const fletchColor= isDark ? 'rgba(190,90,90,0.85)' : 'rgba(160,55,55,0.85)';
+
+        BG.arrows = BG.arrows.filter(a => !a.done);
+        BG.arrows.forEach(arrow => {
+            arrow.x += arrow.vx; arrow.y += arrow.vy;
+            // Off-screen → done
+            if (arrow.x < -80 || arrow.x > canvas.width+80 || arrow.y < -80 || arrow.y > canvas.height+80) {
+                arrow.done = true; return;
+            }
+            // Collision check
+            BG.apples.forEach(apple => {
+                if (apple.dying) return;
+                const dx = arrow.x - apple.x, dy = arrow.y - apple.y;
+                if (Math.sqrt(dx*dx+dy*dy) < apple.size * 0.55) {
+                    apple.dying = true; arrow.done = true;
+                    spawnBurst(apple.x, apple.y, apple.size);
+                }
+            });
+
+            const ang = Math.atan2(arrow.vy, arrow.vx);
+            const len = 55;
+            const tx = arrow.x - Math.cos(ang)*len, ty = arrow.y - Math.sin(ang)*len;
+
+            // Shaft
+            ctx.save();
+            ctx.strokeStyle = shaftColor; ctx.lineWidth = 3; ctx.lineCap = 'round';
+            ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(arrow.x, arrow.y); ctx.stroke();
+
+            // Arrowhead
+            ctx.fillStyle = headColor;
+            ctx.save();
+            ctx.translate(arrow.x, arrow.y); ctx.rotate(ang);
+            ctx.beginPath(); ctx.moveTo(12,0); ctx.lineTo(-5,5); ctx.lineTo(-5,-5); ctx.closePath();
+            ctx.fill(); ctx.restore();
+
+            // Fletching at tail
+            ctx.strokeStyle = fletchColor; ctx.lineWidth = 2;
+            const px = -Math.sin(ang)*8, py = Math.cos(ang)*8;
+            const tail2x = tx + Math.cos(ang)*12, tail2y = ty + Math.sin(ang)*12;
+            [[tx+px, ty+py], [tx-px, ty-py]].forEach(([fx,fy]) => {
+                ctx.beginPath(); ctx.moveTo(fx,fy); ctx.lineTo(tail2x,tail2y); ctx.stroke();
+            });
+            ctx.restore();
+        });
+    }
+
+    function drawParticles() {
+        BG.particles = BG.particles.filter(p => p.life > 0);
+        BG.particles.forEach(p => {
+            p.life--;
+            const t = p.life / p.maxLife;
+            if (p.type === 'ring') {
+                const r = p.radius + (1 - t) * p.radius * 3.5;
+                ctx.save();
+                ctx.globalAlpha = t * 0.85;
+                ctx.strokeStyle = 'rgba(255,200,50,1)';
+                ctx.lineWidth = 2.5;
+                ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.stroke();
+                ctx.restore();
+            } else if (p.type === 'chunk') {
+                p.vx *= 0.91; p.vy *= 0.91;
+                p.x += p.vx; p.y += p.vy;
+                ctx.save();
+                ctx.globalAlpha = t;
+                ctx.fillStyle = p.color;
+                ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(1, p.size * t + 1), 0, Math.PI * 2); ctx.fill();
+                ctx.restore();
+            } else if (p.type === 'leaf') {
+                p.vx *= 0.88; p.vy *= 0.88; p.vy += 0.12;
+                p.x += p.vx; p.y += p.vy;
+                p.rotation += p.rotSpeed;
+                ctx.save();
+                ctx.globalAlpha = t * 0.9;
+                ctx.fillStyle = 'rgba(56,142,60,0.95)';
+                ctx.translate(p.x, p.y); ctx.rotate(p.rotation);
+                ctx.beginPath(); ctx.ellipse(0, 0, p.size, p.size * 0.45, 0, 0, Math.PI * 2); ctx.fill();
+                ctx.restore();
+            }
+        });
+    }
+
+    function animate() {
+        drawBackground();
+        drawCurves();
+        drawArrows();
+        drawApples();
+        drawParticles();
+        drawSunMoon();
+        BG.animationId = requestAnimationFrame(animate);
+    }
+
+    animate();
+}
+
+updateSettingsTags();

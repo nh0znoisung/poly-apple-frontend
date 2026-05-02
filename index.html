@@ -5,10 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Poly Apple</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🍎</text></svg>">
-    <link rel="stylesheet" href="style.css?v=9">
+    <link rel="stylesheet" href="style.css?v=19">
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 </head>
 <body data-theme="dark">
+
+<!-- ===== ANIMATED BACKGROUND ===== -->
+<canvas id="bgCanvas" style="position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none;"></canvas>
 
 <!-- ===== TOP NAVBAR ===== -->
 <div class="top-navbar">
@@ -17,17 +20,22 @@
         <span class="nav-brand-name">Poly Apple</span>
     </div>
     <div class="nav-controls">
-        <div class="theme-toggle-wrap" onclick="toggleTheme()" title="Toggle Dark / Light Mode">
-            <button id="themeToggleBtn" class="theme-btn">☀️</button>
-            <span class="theme-label" id="themeLabel">Dark</span>
-        </div>
+        <label class="theme-switch" title="Toggle Dark / Light Mode">
+            <input type="checkbox" id="themeToggleCheck" onchange="toggleTheme()">
+            <span class="theme-track">
+                <span class="theme-thumb">
+                    <span class="theme-icon" id="themeIcon">🌙</span>
+                </span>
+            </span>
+        </label>
     </div>
 </div>
 
 <!-- ===== LOBBY SCREEN ===== -->
 <div id="lobbyScreen" class="screen lobby-screen">
     <div class="lobby-container" style="margin-top: 56px;">
-        <p class="subtitle" style="margin-top: 10px;">Eat Apples by Drawing Polynomial Curves!</p>
+        <h1>🍎 Poly Apple</h1>
+        <p class="subtitle">Eat Apples by Drawing Polynomial Curves!</p>
 
         <div class="lobby-tabs">
             <button class="tab-btn active" onclick="switchLobbyTab('create')">Create Room</button>
@@ -42,18 +50,59 @@
                     <label for="playerNameCreate">Your Name (optional):</label>
                     <input type="text" id="playerNameCreate" placeholder="Leave blank for a random name">
                 </div>
-                <div class="form-group">
-                    <label for="density">Apple Density:</label>
-                    <select id="density" required>
-                        <option value="0.1">10% — Easier</option>
-                        <option value="0.25" selected>25% — Normal</option>
-                        <option value="0.5">50% — Hard</option>
-                    </select>
+
+                <!-- Collapsible Settings -->
+                <div class="settings-panel" id="settingsPanel">
+                    <div class="settings-header" onclick="toggleSettings()">
+                        <div class="settings-header-left">
+                            <span class="settings-label">Settings</span>
+                            <div class="settings-tags" id="settingsTags">
+                                <span class="stag stag-grid"    id="tagGrid"></span>
+                                <span class="stag stag-density" id="tagDensity"></span>
+                                <span class="stag stag-time"    id="tagTime"></span>
+                                <span class="stag stag-mode"    id="tagMode"></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-body" id="settingsBody">
+                        <div class="form-group" style="margin-bottom:14px;">
+                            <label for="gridSize">🌐 Grid Size</label>
+                            <select id="gridSize" required onchange="updateSettingsTags()">
+                                <option value="5">5x5 — Compact</option>
+                                <option value="10" selected>10x10 — Standard</option>
+                                <option value="15">15x15 — Large</option>
+                                <option value="20">20x20 — Massive</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="margin-bottom:6px;">
+                            <label for="density">🍎 Apples: <span id="densityVal" style="color:var(--accent-red);font-weight:800;">50</span> <span id="densityPct" class="muted-text" style="font-size:0.85em;margin-left:4px;">(50%)</span></label>
+                            <div class="slider-container">
+                                <input type="range" id="density" min="0" max="100" value="50" step="1" oninput="updateSettingsTags()" class="custom-slider">
+                                <div class="slider-ruler">
+                                    <span>0%</span>
+                                    <span>25%</span>
+                                    <span>50%</span>
+                                    <span>75%</span>
+                                    <span>100%</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-group" style="margin-bottom:14px;">
+                            <label for="time">⏱ Timer (seconds)</label>
+                            <input type="number" id="time" value="60" min="30" max="1800" required onchange="updateSettingsTags()" oninput="updateSettingsTags()">
+                        </div>
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label for="mode">⚡ Game Mode</label>
+                            <select id="mode" required onchange="updateSettingsTags()">
+                                <option value="free">Free Play — all equations allowed</option>
+                                <option value="balanced" selected>Balanced — trivials limited</option>
+                                <option value="pro">Poly Masters — degree ≥ 2 only</option>
+                            </select>
+                        </div>
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label for="time">Game Timer (seconds):</label>
-                    <input type="number" id="time" value="30" min="30" max="1800" required>
-                </div>
+
                 <button type="submit" class="btn btn-primary btn-large">🚀 CREATE ROOM</button>
             </form>
         </div>
@@ -65,8 +114,8 @@
                 <input type="text" id="playerNameJoin" placeholder="Leave blank for a random name">
             </div>
             <div class="search-bar-container" style="display: flex; gap: 10px; margin-bottom: 16px;">
-                <input type="text" id="roomSearchInput" placeholder="Enter room ID" onkeydown="if(event.key==='Enter') renderRooms()" style="flex-grow: 1; padding: 12px; border: 2px solid #ddd; border-radius: 8px; font-size: 1em; text-transform: uppercase; font-family: inherit;">
-                <button class="btn btn-icon" onclick="renderRooms()" title="Search Rooms" style="padding: 0 20px; border-radius: 8px; background: #2980b9; border: none; font-size: 1.2em; cursor: pointer; color: white; display: flex; align-items: center; justify-content: center;">🔍</button>
+                <input type="text" id="roomSearchInput" class="search-input" placeholder="Enter room ID" onkeydown="if(event.key==='Enter') renderRooms()">
+                <button class="btn search-btn" onclick="renderRooms()" title="Search Rooms">🔍</button>
             </div>
             <div id="roomsList" class="rooms-list">
                 <p style="text-align:center;color:#999;padding:20px;">Fetching rooms…</p>
@@ -75,33 +124,32 @@
 
         <!-- Waiting Screen (shown inside lobby) -->
         <div id="waitingScreen" class="lobby-tab hidden">
-            <h2 style="text-align:center;margin-bottom:20px;">⏳ Waiting for Opponent…</h2>
+            <!-- Player Slots: Host at top, Guest below -->
+            <div class="waiting-slots" id="waitingSlots">
+                <!-- Slot 1: Host -->
+                <div class="waiting-player-card" id="slotHost"></div>
+                
+                <!-- Slot 2: Guest / Placeholder -->
+                <div id="slotGuestContainer"></div>
+            </div>
 
-            <!-- Player preview -->
-            <div class="waiting-player-card">
-                <div id="waitingAvatar"></div>
-                <div>
-                    <div style="font-weight:700;font-size:1.05em;" id="waitingPlayerName"></div>
-                    <div style="font-size:0.85em;color:#888;">That's you!</div>
+            <!-- Room Settings Section -->
+            <div class="room-settings-box">
+                <p class="room-code-label">SHARE THIS ROOM CODE</p>
+                <div class="room-code-clickable" id="roomCodeDisplay" onclick="copyRoomCode()" title="Click to copy code">
+                    7JU29H
+                    <span id="copyToast" class="copy-toast">✓ Copied</span>
                 </div>
+                <div id="waitingConfigTags" class="room-config-tags" style="justify-content:center;margin-top:16px;gap:8px;"></div>
             </div>
 
-            <div class="room-code-display">
-                <p style="margin-bottom:10px;color:#666;font-weight:600;">📤 SHARE THIS ROOM CODE:</p>
-                <div class="room-code" id="roomCodeDisplay" style="cursor:pointer;user-select:all;"></div>
-                <button id="copyRoomCodeBtn" onclick="copyRoomCode()" class="btn btn-secondary" style="margin-top:10px;padding:8px 24px;font-size:0.9em;width:auto;">📋 Copy</button>
-            </div>
+            <p id="waitingMessage" style="text-align:center;margin:20px 0;font-size:1em;font-weight:700;color:var(--text-primary);">
+                <span class="hourglass-flip" id="waitingHourglass">⏳</span>
+                <span id="waitingText">Waiting for opponent...</span>
+            </p>
 
-            <p id="waitingMessage" style="text-align:center;margin-top:20px;color:#666;font-size:1.05em;font-weight:500;">Waiting for opponent to join…</p>
-
-            <div class="info-box yellow" style="margin:16px 0;">
-                <strong>💡 What Now?</strong><br>
-                • Open this site in another browser/device<br>
-                • Go to "Join Room" tab and paste the code above
-            </div>
-
-            <button id="startGameBtn" class="btn btn-start" onclick="startGameWithOpponent()" style="display:none;">▶️ START GAME!</button>
-            <button class="btn btn-secondary" onclick="cancelRoom()" style="margin-top:10px;width:100%;">❌ Cancel</button>
+            <button id="startGameBtn" class="btn btn-start-premium" onclick="startGameWithOpponent()" style="display:none; width:100%;">🚀 START NEW GAME</button>
+            <button class="btn btn-cancel" onclick="cancelRoom()" style="margin-top:12px;width:100%;padding:12px;">✕ Cancel Room</button>
         </div>
     </div>
 </div>
@@ -113,6 +161,52 @@
 
 <!-- ===== GAME SCREEN ===== -->
 <div id="gameScreen" class="screen game-screen hidden">
+
+    <!-- Botanical vine corner decorations -->
+    <svg class="gs-vine gs-vine-tl" viewBox="0 0 180 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M8 172 Q40 100 130 35 Q95 65 105 120 Q70 75 155 18" stroke="#7a5c2e" stroke-width="2" fill="none" stroke-linecap="round"/>
+        <path d="M60 100 Q30 85 10 55" stroke="#8a6935" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+        <path d="M105 65 Q125 48 152 52" stroke="#8a6935" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+        <ellipse cx="130" cy="35" rx="13" ry="7.5" fill="#4a7c3f" transform="rotate(-35 130 35)" opacity="0.85"/>
+        <ellipse cx="105" cy="120" rx="11" ry="6" fill="#3d6e34" transform="rotate(18 105 120)" opacity="0.8"/>
+        <ellipse cx="60" cy="100" rx="10" ry="5.5" fill="#5a8c4a" transform="rotate(-52 60 100)" opacity="0.8"/>
+        <ellipse cx="10" cy="55" rx="9" ry="5" fill="#4a7c3f" transform="rotate(-22 10 55)" opacity="0.75"/>
+        <ellipse cx="155" cy="18" rx="8" ry="4.5" fill="#3d6e34" transform="rotate(-8 155 18)" opacity="0.7"/>
+        <ellipse cx="152" cy="52" rx="7" ry="4" fill="#5a8c4a" transform="rotate(30 152 52)" opacity="0.65"/>
+        <circle cx="158" cy="11" r="3.5" fill="#8B4513" opacity="0.45"/>
+        <circle cx="165" cy="17" r="2.5" fill="#8B4513" opacity="0.35"/>
+    </svg>
+    <svg class="gs-vine gs-vine-tr" viewBox="0 0 180 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M172 172 Q140 100 50 35 Q85 65 75 120 Q110 75 25 18" stroke="#7a5c2e" stroke-width="2" fill="none" stroke-linecap="round"/>
+        <path d="M120 100 Q150 85 170 55" stroke="#8a6935" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+        <path d="M75 65 Q55 48 28 52" stroke="#8a6935" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+        <ellipse cx="50" cy="35" rx="13" ry="7.5" fill="#4a7c3f" transform="rotate(35 50 35)" opacity="0.85"/>
+        <ellipse cx="75" cy="120" rx="11" ry="6" fill="#3d6e34" transform="rotate(-18 75 120)" opacity="0.8"/>
+        <ellipse cx="120" cy="100" rx="10" ry="5.5" fill="#5a8c4a" transform="rotate(52 120 100)" opacity="0.8"/>
+        <ellipse cx="170" cy="55" rx="9" ry="5" fill="#4a7c3f" transform="rotate(22 170 55)" opacity="0.75"/>
+        <ellipse cx="25" cy="18" rx="8" ry="4.5" fill="#3d6e34" transform="rotate(8 25 18)" opacity="0.7"/>
+        <ellipse cx="28" cy="52" rx="7" ry="4" fill="#5a8c4a" transform="rotate(-30 28 52)" opacity="0.65"/>
+        <circle cx="22" cy="11" r="3.5" fill="#8B4513" opacity="0.45"/>
+        <circle cx="15" cy="17" r="2.5" fill="#8B4513" opacity="0.35"/>
+    </svg>
+    <svg class="gs-vine gs-vine-bl" viewBox="0 0 180 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M8 8 Q40 80 130 145 Q95 115 105 60 Q70 105 155 162" stroke="#7a5c2e" stroke-width="2" fill="none" stroke-linecap="round"/>
+        <path d="M60 80 Q30 95 10 125" stroke="#8a6935" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+        <ellipse cx="130" cy="145" rx="13" ry="7.5" fill="#4a7c3f" transform="rotate(35 130 145)" opacity="0.85"/>
+        <ellipse cx="105" cy="60" rx="11" ry="6" fill="#3d6e34" transform="rotate(-18 105 60)" opacity="0.8"/>
+        <ellipse cx="60" cy="80" rx="10" ry="5.5" fill="#5a8c4a" transform="rotate(52 60 80)" opacity="0.8"/>
+        <ellipse cx="10" cy="125" rx="9" ry="5" fill="#4a7c3f" transform="rotate(22 10 125)" opacity="0.75"/>
+        <ellipse cx="155" cy="162" rx="8" ry="4.5" fill="#3d6e34" transform="rotate(8 155 162)" opacity="0.7"/>
+    </svg>
+    <svg class="gs-vine gs-vine-br" viewBox="0 0 180 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M172 8 Q140 80 50 145 Q85 115 75 60 Q110 105 25 162" stroke="#7a5c2e" stroke-width="2" fill="none" stroke-linecap="round"/>
+        <path d="M120 80 Q150 95 170 125" stroke="#8a6935" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+        <ellipse cx="50" cy="145" rx="13" ry="7.5" fill="#4a7c3f" transform="rotate(-35 50 145)" opacity="0.85"/>
+        <ellipse cx="75" cy="60" rx="11" ry="6" fill="#3d6e34" transform="rotate(18 75 60)" opacity="0.8"/>
+        <ellipse cx="120" cy="80" rx="10" ry="5.5" fill="#5a8c4a" transform="rotate(-52 120 80)" opacity="0.8"/>
+        <ellipse cx="170" cy="125" rx="9" ry="5" fill="#4a7c3f" transform="rotate(-22 170 125)" opacity="0.75"/>
+        <ellipse cx="25" cy="162" rx="8" ry="4.5" fill="#3d6e34" transform="rotate(-8 25 162)" opacity="0.7"/>
+    </svg>
 
     <!-- Review mode banner -->
     <div id="reviewBanner" class="review-banner hidden">
@@ -229,12 +323,116 @@
 </div>
 
 
-<!-- Sound toggle — fixed top-right -->
-<button id="soundToggleBtn" onclick="toggleSound()" class="sound-btn" title="Toggle sound">🔊</button>
+<!-- Fixed action buttons — bottom left -->
+<div class="fixed-actions">
+    <button id="soundToggleBtn" onclick="toggleSound()" class="action-pill" title="Toggle sound">
+        <svg id="soundIconOn" viewBox="0 0 20 20" fill="currentColor"><path d="M9.5 3.5v13l-4-4H2a1 1 0 01-1-1V8a1 1 0 011-1h3.5l4-4zM13.1 7a5 5 0 010 6M15.5 5a8 8 0 010 10"/></svg>
+        <svg id="soundIconOff" viewBox="0 0 20 20" fill="currentColor" class="hidden"><path d="M9.5 3.5v13l-4-4H2a1 1 0 01-1-1V8a1 1 0 011-1h3.5l4-4zM14 8l3 3m0-3l-3 3"/></svg>
+    </button>
+    <button id="spellbookBtn" onclick="toggleTutorial()" class="action-pill action-pill-book" title="How to play">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path d="M4 2a2 2 0 00-2 2v12a2 2 0 002 2h9.5a.5.5 0 00.35-.85L12 16.3V5a3 3 0 013-3H4zm9 1a2 2 0 012 2v9.17l1.15 1.15A1.5 1.5 0 0115 18H4a1 1 0 01-1-1V4a1 1 0 011-1h9z"/><path d="M6 7h5M6 10h5M6 13h3" stroke="currentColor" stroke-width="1" stroke-linecap="round" fill="none"/></svg>
+    </button>
+    <button id="gameThemeBtn" onclick="toggleTheme()" class="action-pill action-pill-theme" title="Toggle light/dark mode">
+        <span id="gameThemeIcon" style="font-size:1.2em;line-height:1;">🌙</span>
+    </button>
+</div>
+
+<!-- Tutorial / Spellbook Overlay -->
+<div id="tutorialOverlay" class="tutorial-overlay hidden" onclick="closeTutorialOnBackdrop(event)">
+    <div class="tutorial-scroll">
+        <!-- Vine decorations (SVG) -->
+        <svg class="vine vine-tl" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M5 115 Q30 60 80 20 Q50 40 60 80 Q40 50 90 10" stroke="#7a5c2e" stroke-width="2" fill="none" stroke-linecap="round"/>
+            <ellipse cx="80" cy="20" rx="8" ry="5" fill="#4a7c3f" transform="rotate(-30 80 20)" opacity="0.8"/>
+            <ellipse cx="60" cy="80" rx="7" ry="4" fill="#4a7c3f" transform="rotate(20 60 80)" opacity="0.7"/>
+            <ellipse cx="35" cy="55" rx="6" ry="3.5" fill="#5a8c4a" transform="rotate(-50 35 55)" opacity="0.75"/>
+        </svg>
+        <svg class="vine vine-tr" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M115 115 Q90 60 40 20 Q70 40 60 80 Q80 50 30 10" stroke="#7a5c2e" stroke-width="2" fill="none" stroke-linecap="round"/>
+            <ellipse cx="40" cy="20" rx="8" ry="5" fill="#4a7c3f" transform="rotate(30 40 20)" opacity="0.8"/>
+            <ellipse cx="60" cy="80" rx="7" ry="4" fill="#4a7c3f" transform="rotate(-20 60 80)" opacity="0.7"/>
+            <ellipse cx="85" cy="55" rx="6" ry="3.5" fill="#5a8c4a" transform="rotate(50 85 55)" opacity="0.75"/>
+        </svg>
+
+        <button class="tutorial-close" onclick="toggleTutorial()">✕</button>
+
+        <div class="scroll-header">
+            <div class="scroll-title-ornament">✦ ── ✦</div>
+            <h2 class="scroll-title">📜 Poly Apple — Grimoire</h2>
+            <div class="scroll-title-ornament">✦ ── ✦</div>
+        </div>
+
+        <div class="scroll-body">
+            <section class="scroll-section">
+                <h3>⚔️ The Battle</h3>
+                <p>Two wizards face each other across an enchanted coordinate plane, where Apples gleam at the <strong>integer lattice points</strong> — the sacred intersections where grid lines cross. Each turn, conjure a <strong>polynomial spell</strong> of the form <code>y = f(x)</code>, tracing a magical curve through the plane. Every Apple whose coordinates satisfy your equation is consumed by your sorcery. The wizard who harvests the most apples claims victory.</p>
+            </section>
+
+            <div class="scroll-divider">⁂</div>
+
+            <section class="scroll-section">
+                <h3>🍎 Harvesting Apples</h3>
+                <p>Your spell is a curve drawn on the coordinate grid. Any <strong>Apple that lies on the curve</strong> (at integer grid points) is consumed by your magic. The more apples your spell captures, the higher your score.</p>
+                <div class="scroll-tip">💡 A well-placed parabola can sweep entire rows of apples in one cast!</div>
+            </section>
+
+            <div class="scroll-divider">⁂</div>
+
+            <section class="scroll-section">
+                <h3>✍️ Casting a Spell</h3>
+                <p>Type your equation in the input panel, then press <kbd>Enter</kbd> or click <strong>Cast</strong>. Every spell must be a true <strong>polynomial in <em>x</em></strong> — a sum of powers, each bearing a whole-number coefficient:</p>
+                <div class="scroll-formula">f(x) = a<sub>n</sub>x<sup>n</sup> + a<sub>n−1</sub>x<sup>n−1</sup> + … + a<sub>1</sub>x + a<sub>0</sub></div>
+                <p>The Arcane Codex decrees four unbreakable laws — and one ancient freedom:</p>
+                <ul class="scroll-list">
+                    <li>⚡ <strong>Degree ≤ 10</strong> — the highest power of x shall not exceed ten</li>
+                    <li>⚡ <strong>Integer coefficients only</strong> — every aᵢ must be a whole number; fractional sorcery (e.g. <code>2.5·x²</code>) is forbidden by the ancient compact</li>
+                    <li>⚡ <strong>Bounded magnitude</strong> — |aᵢ| ≤ 10⁹; no coefficient may overflow the arcane registers</li>
+                    <li>⚡ <strong>No parentheses</strong> — grouping symbols are not permitted; expressions such as <code>(1+2)·x</code> or <code>(x+1)(x³+1)</code> are beyond the codex</li>
+                    <li>✨ <strong>Free ordering &amp; repetition</strong> — terms may appear in any order (<code>x^3*2 + x^8</code> is as valid as <code>x^8 + 2x^3</code>), and like terms may be repeated (<code>x^8 + x^8</code> is permitted and combines by addition)</li>
+                </ul>
+            </section>
+
+            <div class="scroll-divider">⁂</div>
+
+            <section class="scroll-section">
+                <h3>⚡ Game Modes</h3>
+                <ul class="scroll-list mode-list">
+                    <li><strong>Free Play</strong> — All spells allowed. Perfect for learning the grid.</li>
+                    <li><strong>Balanced</strong> — Trivial spells (degree 0 &amp; 1) are limited to <em>3 uses</em> with an exponential cooldown (2s → 4s → 8s) after each cast. Master the higher arts!</li>
+                    <li><strong>Poly Masters</strong> — Only polynomial spells of <em>degree ≥ 2</em> are permitted. True sorcerers only.</li>
+                </ul>
+            </section>
+
+            <div class="scroll-divider">⁂</div>
+
+            <section class="scroll-section">
+                <h3>⏳ The Arcane Timer</h3>
+                <p>Each turn is timed. If the hourglass runs out before you cast, your turn is forfeited. Plan wisely — hesitation is the enemy of victory.</p>
+            </section>
+
+            <div class="scroll-divider">⁂</div>
+
+            <section class="scroll-section">
+                <h3>🏆 Victory Conditions</h3>
+                <p>The duel ends when all apples are harvested or time expires. Should the outcome remain unclear, the oracle resolves the duel through the following chain of judgement:</p>
+                <ol class="scroll-list">
+                    <li>🥇 <strong>Score</strong> — the wizard with the higher accumulated score prevails</li>
+                    <li>🍎 <strong>Apples eaten</strong> — if scores are equal, the one who consumed more apples wins</li>
+                    <li>✍️ <strong>Fewer spells cast</strong> — if apple counts are equal, the more efficient caster (fewer expressions used) is crowned</li>
+                    <li>⏱ <strong>Earlier last cast</strong> — if all else is equal, the wizard who finished casting sooner claims victory</li>
+                    <li>🤝 <strong>Draw</strong> — if the fates decree it, honours are shared</li>
+                </ol>
+                <p style="margin-top:10px;font-style:italic;">May your polynomials be ever in your favour.</p>
+            </section>
+        </div>
+
+        <div class="scroll-footer">── ⚜ Poly Apple Academy ⚜ ──</div>
+    </div>
+</div>
 
 <!-- Fireworks Canvas -->
 <canvas id="fireworksCanvas" class="fireworks-canvas hidden"></canvas>
 
-<script src="script.js?v=9"></script>
+<script src="script.js?v=18"></script>
 </body>
 </html>
