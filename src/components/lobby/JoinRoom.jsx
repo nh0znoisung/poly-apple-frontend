@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { getRandomName } from '../../constants/names.js';
-import { getRandomAvatarIndex } from '../../constants/avatars.js';
 import { useGameContext } from '../../context/GameContext.jsx';
+import { useProfile } from '../../context/ProfileContext.jsx';
 import { useSocket } from '../../hooks/useSocket.js';
 
 const TAG_ICONS = { grid: '⊞', apple: '🍎', clock: '⏱', bolt: '⚡' };
@@ -50,9 +49,10 @@ function RoomCard({ room, onJoin }) {
 
 export default function JoinRoom({ onWaiting }) {
   const { setPlayerInfo, setRoom, setPlayerNum, setConfig, setOpponent, setOpponentReady } = useGameContext();
+  const { profile, updateProfile } = useProfile();
   const { socketRef } = useSocket();
 
-  const [name, setName] = useState('');
+  const [name, setName] = useState(profile.name);
   const [code, setCode] = useState('');
   const [rooms, setRooms] = useState([]);
   const [joining, setJoining] = useState(false);
@@ -78,9 +78,10 @@ export default function JoinRoom({ onWaiting }) {
 
   function joinByCode(roomCode) {
     if (joining) return;
-    const playerName = name.trim() || getRandomName();
+    const playerName = name.trim() || profile.name;
     if (!name.trim()) setName(playerName);
-    const avatarIndex = getRandomAvatarIndex();
+    if (playerName !== profile.name) updateProfile({ name: playerName });
+    const avatarIndex = profile.avatarIndex;
     setJoining(true);
 
     const socket = socketRef.current;
@@ -89,7 +90,7 @@ export default function JoinRoom({ onWaiting }) {
     setPlayerInfo(playerName, avatarIndex);
     setPlayerNum(2);
 
-    socket.emit('joinRoom', { roomCode, name: playerName, avatarIndex });
+    socket.emit('joinRoom', { roomCode, playerId: profile.id, name: playerName, avatarIndex });
 
     socket.once('joinFailed', (err) => {
       setJoining(false);

@@ -1,7 +1,6 @@
 import { useState } from 'react';
-import { getRandomName } from '../../constants/names.js';
-import { getRandomAvatarIndex } from '../../constants/avatars.js';
 import { useGameContext } from '../../context/GameContext.jsx';
+import { useProfile } from '../../context/ProfileContext.jsx';
 import { useSocket } from '../../hooks/useSocket.js';
 
 const GRID_OPTIONS = [
@@ -54,9 +53,10 @@ function DensitySlider({ value, gridSize, onChange }) {
 // ── Main component ────────────────────────────────────────────────────────────
 export default function CreateRoom({ onWaiting }) {
   const { setPlayerInfo, setRoom, setPlayerNum, setConfig } = useGameContext();
+  const { profile, updateProfile } = useProfile();
   const { socketRef } = useSocket();
 
-  const [name, setName]             = useState('');
+  const [name, setName]             = useState(profile.name);
   const [gridSize, setGridSize]     = useState(10);
   const [appleCount, setAppleCount] = useState(Math.round(10 * 10 * 0.25));
   const [mode, setMode]             = useState('balanced');
@@ -72,9 +72,10 @@ export default function CreateRoom({ onWaiting }) {
   }
 
   function handleCreate() {
-    const playerName = name.trim() || getRandomName();
+    const playerName = name.trim() || profile.name;
     if (!name.trim()) setName(playerName);
-    const avatarIndex = getRandomAvatarIndex();
+    if (playerName !== profile.name) updateProfile({ name: playerName });
+    const avatarIndex = profile.avatarIndex;
     const config = { appleDensity: appleCount / maxApples, gridSize, timePerTurn: time || 60, mode };
 
     setPlayerInfo(playerName, avatarIndex);
@@ -84,7 +85,7 @@ export default function CreateRoom({ onWaiting }) {
     const socket = socketRef.current;
     if (!socket) return;
 
-    socket.emit('createRoom', { name: playerName, avatarIndex, config });
+    socket.emit('createRoom', { playerId: profile.id, name: playerName, avatarIndex, config });
     socket.once('roomCreated', (data) => {
       setRoom(data.roomCode, 'creator', config);
       onWaiting();

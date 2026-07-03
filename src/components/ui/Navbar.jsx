@@ -1,6 +1,7 @@
 import { useAuth } from '../../hooks/useAuth.js';
 import { signOut } from '../../lib/firebase.js';
 import { useGameContext, SCREENS } from '../../context/GameContext.jsx';
+import ProfileChip from './ProfileChip.jsx';
 
 export default function Navbar({ onSignInClick }) {
   const { user } = useAuth();
@@ -15,6 +16,7 @@ export default function Navbar({ onSignInClick }) {
       </a>
 
       <div className="nav-controls">
+        <ProfileChip />
         <div className="nav-auth-area">
           {user ? (
             <div className="nav-user-badge">
