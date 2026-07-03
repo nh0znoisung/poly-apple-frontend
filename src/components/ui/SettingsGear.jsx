@@ -1,7 +1,5 @@
-import { useState, useEffect } from 'react';
-import { triggerThemeTransition } from '../../lib/bgAnimation.js';
+import { useState } from 'react';
 import { soundManager } from '../../lib/SoundManager.js';
-import { useGameContext } from '../../context/GameContext.jsx';
 
 const SoundOnIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -19,60 +17,9 @@ const SoundOffIcon = () => (
   </svg>
 );
 
-const SunSvg = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="22" height="22">
-    <circle cx="12" cy="12" r="5"/>
-    <line x1="12" y1="1" x2="12" y2="3"/>
-    <line x1="12" y1="21" x2="12" y2="23"/>
-    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
-    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
-    <line x1="1" y1="12" x2="3" y2="12"/>
-    <line x1="21" y1="12" x2="23" y2="12"/>
-    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
-    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
-  </svg>
-);
-
-const MoonSvg = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="22" height="22">
-    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-  </svg>
-);
-
-function ThemeToggleIcon({ isDark }) {
-  return (
-    <div className="theme-toggle-icon">
-      <div className={`theme-icon-layer theme-icon-sun${!isDark ? ' visible' : ''}`}>
-        <SunSvg />
-      </div>
-      <div className={`theme-icon-layer theme-icon-moon${isDark ? ' visible' : ''}`}>
-        <MoonSvg />
-      </div>
-    </div>
-  );
-}
-
 export default function SettingsGear({ onRulesClick }) {
   const [open, setOpen] = useState(false);
   const [soundOn, setSoundOn] = useState(true);
-  const [isDark, setIsDark] = useState(() => {
-    const saved = localStorage.getItem('polyapple_theme');
-    return saved ? saved === 'dark' : false;
-  });
-  useGameContext();
-
-  useEffect(() => {
-    const theme = isDark ? 'dark' : 'light';
-    document.body.dataset.theme = theme;
-  }, [isDark]);
-
-  function toggleTheme() {
-    const from = document.body.dataset.theme || 'light';
-    triggerThemeTransition(from);
-    const next = from === 'dark' ? 'light' : 'dark';
-    localStorage.setItem('polyapple_theme', next);
-    setIsDark(next === 'dark');
-  }
 
   function toggleSound() {
     const on = soundManager.toggle();
@@ -105,17 +52,6 @@ export default function SettingsGear({ onRulesClick }) {
             {soundOn ? <SoundOnIcon /> : <SoundOffIcon />}
           </button>
           <span className="pill-tooltip">{soundOn ? 'Mute Sound' : 'Unmute Sound'}</span>
-        </div>
-
-        <div className="pill-wrapper">
-          <button
-            className="action-pill action-pill-theme"
-            style={{ display: 'flex' }}
-            onClick={toggleTheme}
-          >
-            <ThemeToggleIcon isDark={isDark} />
-          </button>
-          <span className="pill-tooltip">{isDark ? 'Light Mode' : 'Dark Mode'}</span>
         </div>
 
       </div>

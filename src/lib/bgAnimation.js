@@ -117,7 +117,7 @@ export function initBgCanvas(canvas) {
 
     // ── Draw functions ────────────────────────────────
     function drawBackground() {
-        const isDark = document.body.dataset.theme !== 'light';
+        const isDark = false; // dark mode removed — light theme only
         if (isDark) {
             const g = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
             g.addColorStop(0, '#2d3748'); g.addColorStop(1, '#4a5568');
@@ -169,7 +169,7 @@ export function initBgCanvas(canvas) {
     }
 
     function drawCurves() {
-        const isDark = document.body.dataset.theme !== 'light';
+        const isDark = false; // dark mode removed — light theme only
         BG.curves.forEach(curve => {
             if (isDark) {
                 curve.offset += curve.speed;
@@ -221,7 +221,7 @@ export function initBgCanvas(canvas) {
     }
 
     function drawSunMoon() {
-        const isDark=document.body.dataset.theme!=='light';
+        const isDark=false;
         const time=Date.now()*0.0002;
         const trans=BG.themeTransition;
         const cx=100, cy=80;
@@ -268,7 +268,7 @@ export function initBgCanvas(canvas) {
             if (apple.y-h<60)            { apple.vy=Math.abs(apple.vy); apple.y=60+h; }
             if (apple.y+h>canvas.height) { apple.vy=-Math.abs(apple.vy); apple.y=canvas.height-h; }
         });
-        const isLightMode=document.body.dataset.theme==='light';
+        const isLightMode=true;
         BG.apples.forEach(apple => {
             if (apple.opacity<=0) return;
             ctx.save(); ctx.translate(apple.x,apple.y); ctx.rotate(apple.rotation);
@@ -302,7 +302,7 @@ export function initBgCanvas(canvas) {
             // Single shoot SFX per spawn batch (not per arrow — would be too loud)
             if (shouldPlayBgSounds()) soundManager.arrowShoot();
         }
-        const isDark=document.body.dataset.theme!=='light';
+        const isDark=false;
         const shaftColor=isDark?'rgba(210,175,90,0.9)':'rgba(130,80,30,0.9)';
         const headColor=isDark?'rgba(200,160,70,1)':'rgba(110,60,20,1)';
         const fletchColor=isDark?'rgba(190,90,90,0.85)':'rgba(160,55,55,0.85)';
@@ -337,7 +337,7 @@ export function initBgCanvas(canvas) {
     }
 
     function drawParticles() {
-        const isDarkTheme=document.body.dataset.theme!=='light';
+        const isDarkTheme=false;
         BG.particles=BG.particles.filter(p=>p.life>0);
         BG.particles.forEach(p => {
             p.life--;
@@ -384,8 +384,4 @@ export function initBgCanvas(canvas) {
         window.removeEventListener('resize', onResize);
         if (BG.animationId) cancelAnimationFrame(BG.animationId);
     };
-}
-
-export function triggerThemeTransition(from) {
-    if (_state) _state.themeTransition = { start: Date.now(), from };
 }

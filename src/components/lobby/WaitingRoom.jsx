@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useGameContext } from '../../context/GameContext.jsx';
 import { useSocket, useSocketEvent } from '../../hooks/useSocket.js';
 import { AVATARS } from '../../constants/avatars.js';
@@ -25,15 +25,15 @@ const CheckIcon = () => (
   </svg>
 );
 
-export default function WaitingRoom({ message: initialMessage, onCancel, onCountdown }) {
+export default function WaitingRoom({ onCancel, onCountdown }) {
   const {
     roomCode, playerRole, myName, myAvatarIndex,
-    opponentName, opponentAvatarIndex, roomConfig,
-    setOpponent, setConfig,
+    opponentName, opponentAvatarIndex, opponentId, opponentReady, roomConfig,
+    setOpponent, setOpponentReady, setConfig, setPlayerNum, setPlayerInfo,
   } = useGameContext();
   const { socketRef } = useSocket();
 
-  const [message, setMessage] = useState(initialMessage || '');
+  const [message, setMessage] = useState('');
   const [copied, setCopied] = useState(false);
   const isCreator = playerRole === 'creator';
 
@@ -43,31 +43,37 @@ export default function WaitingRoom({ message: initialMessage, onCancel, onCount
   const secs = cfg.timePerTurn || 60;
   const modeLabel = MODE_LABELS[cfg.mode] || 'Balanced';
 
+  // Fresh join flow: the opponent just entered the room — both are present & ready.
   useSocketEvent('playerJoined', useCallback((data) => {
     if (data.config) setConfig(data.config);
     const { players = [], creatorId } = data;
     const opponent = playerRole === 'creator'
       ? players.find(p => p.id !== creatorId)
       : players.find(p => p.id === creatorId);
-    if (opponent) setOpponent(opponent.name, opponent.avatarIndex, opponent.id);
-    if (playerRole === 'creator') {
-      setMessage(`${opponent?.name || 'Opponent'} is here! Start the duel?`);
+    if (opponent) {
+      setOpponent(opponent.name, opponent.avatarIndex, opponent.id);
+      setOpponentReady(true);
+    }
+  }, [setConfig, setOpponent, setOpponentReady, playerRole]));
+
+  useSocketEvent('gameStart', useCallback((data) => {
+    // Server is authoritative about player number & avatars (it resolves avatar conflicts).
+    if (data.myPlayerNum) setPlayerNum(data.myPlayerNum);
+    if (data.yourAvatarIndex != null) setPlayerInfo(myName, data.yourAvatarIndex);
+    if (data.opponentAvatarIndex != null) setOpponent(opponentName, data.opponentAvatarIndex, opponentId);
+    onCountdown(data);
+  }, [onCountdown, setPlayerNum, setPlayerInfo, setOpponent, myName, opponentName, opponentId]));
+
+  // Reactive status message — always reflects the current roster/readiness.
+  useEffect(() => {
+    if (!opponentName || !opponentReady) {
+      setMessage(isCreator ? 'Waiting for opponent to join…' : 'Waiting for the host…');
+    } else if (isCreator) {
+      setMessage(`${opponentName} is here! Start the duel?`);
     } else {
       setMessage('Waiting for host to start the game…');
     }
-  }, [setConfig, setOpponent, playerRole]));
-
-  useSocketEvent('hostPromoted', useCallback((data) => {
-    const socket = socketRef.current;
-    if (data.newHostId !== socket?.id) return;
-    const opp = (data.players || []).find(p => p.id !== data.newHostId);
-    if (opp) setOpponent(opp.name, opp.avatarIndex, opp.id);
-    setMessage(opp ? `${opp.name} is here! Start the duel?` : 'Waiting for opponent to join…');
-  }, [setOpponent, socketRef]));
-
-  useSocketEvent('gameStart', useCallback((data) => {
-    onCountdown(data);
-  }, [onCountdown]));
+  }, [opponentName, opponentReady, isCreator]);
 
   function handleStart() {
     const socket = socketRef.current;
@@ -82,7 +88,8 @@ export default function WaitingRoom({ message: initialMessage, onCancel, onCount
     });
   }
 
-  const showStartBtn = isCreator && !!opponentName;
+  const opponentHere = !!opponentName && opponentReady;
+  const showStartBtn = isCreator && opponentHere;
   const hostAvatar = isCreator ? myAvatarIndex : (opponentAvatarIndex ?? 0);
   const hostName   = isCreator ? (myName || 'You') : (opponentName || 'Host');
   const guestAvatar = isCreator ? (opponentAvatarIndex ?? 0) : myAvatarIndex;
@@ -112,7 +119,7 @@ export default function WaitingRoom({ message: initialMessage, onCancel, onCount
         </div>
 
         {/* Guest slot */}
-        {opponentName ? (
+        {opponentHere ? (
           <div className={`waiting-player-card vibe-${guestAvatar}`}>
             <AvatarEl avatarIndex={guestAvatar} />
             <div>

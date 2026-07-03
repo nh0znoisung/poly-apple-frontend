@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useGameContext, SCREENS } from '../../context/GameContext.jsx';
-import { useSocket } from '../../hooks/useSocket.js';
+import { useSocket, useSocketEvent } from '../../hooks/useSocket.js';
 import { soundManager } from '../../lib/SoundManager.js';
 import CreateRoom from './CreateRoom.jsx';
 import JoinRoom from './JoinRoom.jsx';
@@ -9,20 +9,39 @@ import WaitingRoom from './WaitingRoom.jsx';
 const LOBBY_TABS = { CREATE: 'create', JOIN: 'join', WAITING: 'waiting' };
 
 export default function LobbyPage() {
-  const { screen, startGame, reset, lobbyView, setLobbyView } = useGameContext();
+  const {
+    screen, startGame, reset, lobbyView, setLobbyView,
+    setOpponent, setOpponentReady, setRole,
+  } = useGameContext();
   const { socketRef } = useSocket();
 
   const [tab, setTab] = useState(LOBBY_TABS.CREATE);
-  const [waitingMsg, setWaitingMsg] = useState('');
   const [countdown, setCountdown] = useState(null);
 
   useEffect(() => {
     if (lobbyView === 'waiting') {
       setTab(LOBBY_TABS.WAITING);
-      setWaitingMsg('Waiting for opponent to be ready…');
       setLobbyView('default');
     }
   }, [lobbyView, setLobbyView]);
+
+  // Room roster/readiness sync — handled here (LobbyPage is always mounted) so the
+  // event is never missed during the summary→waiting-room transition.
+  useSocketEvent('roomRejoined', useCallback((data) => {
+    const myId = socketRef.current?.id;
+    const { players = [], creatorId, bothBack } = data;
+    if (creatorId && myId) setRole(myId === creatorId ? 'creator' : 'joiner');
+    const opp = players.find(p => p.id !== myId);
+    if (opp) setOpponent(opp.name, opp.avatarIndex, opp.id);
+    else setOpponent('', 0, null);
+    setOpponentReady(!!bothBack);
+  }, [socketRef, setRole, setOpponent, setOpponentReady]));
+
+  // The room was cleaned up (expired / everyone left) before we could return.
+  useSocketEvent('roomGone', useCallback(() => {
+    setTab(LOBBY_TABS.CREATE);
+    reset();
+  }, [reset]));
 
   const handleCountdown = useCallback((gameStartData) => {
     let count = 3;
@@ -44,8 +63,7 @@ export default function LobbyPage() {
 
   if (screen !== SCREENS.LOBBY) return null;
 
-  function showWaiting(_roomCode, msg) {
-    setWaitingMsg(msg);
+  function showWaiting() {
     setTab(LOBBY_TABS.WAITING);
   }
 
@@ -54,11 +72,6 @@ export default function LobbyPage() {
     if (socket) socket.emit('cancelRoom');
     setTab(LOBBY_TABS.CREATE);
     reset();
-  }
-
-  function handleSpectate(roomCode) {
-    const socket = socketRef.current;
-    if (socket) socket.emit('spectate', { roomCode });
   }
 
   const isWaiting = tab === LOBBY_TABS.WAITING;
@@ -74,7 +87,6 @@ export default function LobbyPage() {
       <div className="lobby-container">
         {isWaiting ? (
           <WaitingRoom
-            message={waitingMsg}
             onCancel={handleCancel}
             onCountdown={handleCountdown}
           />
@@ -102,7 +114,7 @@ export default function LobbyPage() {
               <CreateRoom onWaiting={showWaiting} />
             )}
             {tab === LOBBY_TABS.JOIN && (
-              <JoinRoom onWaiting={showWaiting} onSpectate={handleSpectate} />
+              <JoinRoom onWaiting={showWaiting} />
             )}
           </>
         )}

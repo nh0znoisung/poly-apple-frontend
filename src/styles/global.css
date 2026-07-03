@@ -2,26 +2,7 @@
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {
-    --bg-gradient: linear-gradient(135deg, #2d3748 0%, #4a5568 100%);
-    --panel-bg: rgba(255, 255, 255, 0.12);
-    --panel-border: rgba(255, 255, 255, 0.2);
-    --text-primary: #ffffff;
-    --text-secondary: #e2e8f0;
-    --accent-red: #fc8181;
-    --accent-green: #68d391;
-    --input-bg: rgba(255, 255, 255, 0.1);
-    --input-border: rgba(255, 255, 255, 0.25);
-    --nav-bg: rgba(26, 32, 44, 0.92);
-    --nav-border: rgba(255, 255, 255, 0.12);
-    --room-info-color: #e2e8f0;
-    font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background: var(--bg-gradient);
-    color: var(--text-primary);
-    min-height: 100vh;
-    overflow: hidden;
-}
-
-body[data-theme="light"] {
+    /* Single light theme — dark mode removed */
     --bg-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     --panel-bg: rgba(255, 255, 255, 0.95);
     --panel-border: rgba(0, 0, 0, 0.1);
@@ -34,6 +15,11 @@ body[data-theme="light"] {
     --nav-bg: rgba(255, 255, 255, 0.97);
     --nav-border: rgba(0, 0, 0, 0.1);
     --room-info-color: #4a5568;
+    font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: var(--bg-gradient);
+    color: var(--text-primary);
+    min-height: 100vh;
+    overflow: hidden;
 }
 
 /* ===== TOP NAVBAR ===== */
@@ -106,17 +92,14 @@ body.game-active .top-navbar {
 .btn-large { font-size: 1.05em; padding: 14px; font-weight: 700; }
 .btn-cancel { background: transparent; color: var(--accent-red); border: 1.5px solid var(--accent-red); font-weight: 600; transition: all 0.2s; }
 .btn-cancel:hover { background: rgba(252,129,129,0.2); color: white; border-color: var(--accent-red); transform: scale(1.02); }
-body[data-theme="dark"] .btn-cancel { background: rgba(252,129,129,0.12); border-color: #f87171; color: #fca5a5; border-width: 1.5px; }
-body[data-theme="dark"] .btn-cancel:hover { background: rgba(252,129,129,0.28); border-color: #ef4444; color: #ffffff; }
-body[data-theme="light"] .btn-cancel { background: rgba(229,62,62,0.1); border-color: #dc2626; color: #991b1b; }
-body[data-theme="light"] .btn-cancel:hover { background: rgba(229,62,62,0.18); border-color: #b91c1c; color: #7f1d1d; transform: scale(1.02); }
+.btn-cancel { background: rgba(229,62,62,0.1); border-color: #dc2626; color: #991b1b; }
+.btn-cancel:hover { background: rgba(229,62,62,0.18); border-color: #b91c1c; color: #7f1d1d; transform: scale(1.02); }
 .btn-room { background: #8e44ad; color: white; }
 .btn-room:hover { background: #6c3483; }
 
 /* ===== FIXED SETTINGS GEAR ===== */
 .fixed-actions { position: fixed; bottom: 16px; left: 16px; z-index: 9999; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
-.fixed-gear-btn { background: rgba(20,20,30,0.82); border-color: rgba(255,255,255,0.18); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
-body[data-theme="light"] .fixed-gear-btn { background: rgba(255,255,255,0.88); border-color: rgba(0,0,0,0.14); color: #444; }
+.fixed-gear-btn { background: rgba(255,255,255,0.88); border-color: rgba(0,0,0,0.14); color: #444; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
 .fixed-gear-btn .nav-gear-icon { width: 22px; height: 22px; color: inherit; transition: transform 0.4s cubic-bezier(0.34,1.2,0.64,1); }
 .fixed-gear-btn.gear-open .nav-gear-icon { transform: rotate(90deg); }
 .fixed-gear-menu { display: flex; flex-direction: column; gap: 8px; opacity: 0; transform: translateY(10px) scale(0.9); transform-origin: bottom left; pointer-events: none; transition: opacity 0.2s ease, transform 0.2s ease; }
@@ -124,28 +107,17 @@ body[data-theme="light"] .fixed-gear-btn { background: rgba(255,255,255,0.88); b
 .fixed-gear-menu .pill-wrapper:nth-child(1) .action-pill { transition-delay: 0.08s; }
 .fixed-gear-menu .pill-wrapper:nth-child(2) .action-pill { transition-delay: 0.04s; }
 .fixed-gear-menu .pill-wrapper:nth-child(3) .action-pill { transition-delay: 0s; }
-.fixed-gear-menu .action-pill-theme { display: flex !important; }
 .action-pill { background: var(--accent-red); color: white; border: 2px solid rgba(255,255,255,0.3); border-radius: 12px; width: 46px; height: 46px; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0,0,0,0.2); transition: all 0.3s cubic-bezier(0.175,0.885,0.32,1.275); }
 .action-pill svg { width: 24px; height: 24px; }
 .action-pill:hover { transform: scale(1.1) translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,0.3); }
 .action-pill:active { transform: scale(0.95); }
 .action-pill-book { background: #5d4037; border-color: #d4af37; }
-.action-pill-theme { background: #f0a500; border-color: #f5c842; display: flex; }
-body[data-theme="dark"] .action-pill-theme { background: #1e3d28; border-color: rgba(80,160,100,0.7); }
 
 /* Pill wrapper + tooltip */
 .pill-wrapper { position: relative; display: flex; align-items: center; }
 .pill-tooltip { position: absolute; left: calc(100% + 10px); top: 50%; transform: translateY(-50%); background: rgba(15,15,25,0.85); color: #fff; font-size: 0.7em; font-weight: 600; padding: 4px 10px; border-radius: 6px; white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity 0.15s ease; backdrop-filter: blur(6px); letter-spacing: 0.2px; box-shadow: 0 2px 8px rgba(0,0,0,0.25); }
-body[data-theme="light"] .pill-tooltip { background: rgba(30,30,40,0.82); }
+.pill-tooltip { background: rgba(30,30,40,0.82); }
 .pill-wrapper:hover .pill-tooltip { opacity: 1; }
-
-/* Sun / Moon animation */
-.theme-toggle-icon { position: relative; width: 22px; height: 22px; }
-.theme-icon-layer { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; transition: opacity 0.3s ease, transform 0.35s cubic-bezier(0.34,1.56,0.64,1); }
-.theme-icon-sun { opacity: 0; transform: rotate(-90deg) scale(0.5); }
-.theme-icon-moon { opacity: 0; transform: rotate(90deg) scale(0.5); }
-.theme-icon-sun.visible { opacity: 1; transform: rotate(0deg) scale(1); }
-.theme-icon-moon.visible { opacity: 1; transform: rotate(0deg) scale(1); }
 
 /* ===== COUNTDOWN OVERLAY ===== */
 .countdown-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.75); display: flex; align-items: center; justify-content: center; z-index: 9000; }

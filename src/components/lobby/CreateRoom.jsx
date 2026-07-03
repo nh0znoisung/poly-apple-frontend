@@ -87,7 +87,7 @@ export default function CreateRoom({ onWaiting }) {
     socket.emit('createRoom', { name: playerName, avatarIndex, config });
     socket.once('roomCreated', (data) => {
       setRoom(data.roomCode, 'creator', config);
-      onWaiting(data.roomCode, 'Waiting for opponent to join…');
+      onWaiting();
     });
   }
 

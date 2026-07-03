@@ -15,7 +15,7 @@ const SearchIcon = () => (
   </svg>
 );
 
-function RoomCard({ room, onJoin, onView }) {
+function RoomCard({ room, onJoin }) {
   const cfg = room.config || {};
   const gs = cfg.gridSize || 10;
   const appleCount = cfg.appleDensity != null ? Math.round(cfg.appleDensity * gs * gs) : 50;
@@ -42,14 +42,14 @@ function RoomCard({ room, onJoin, onView }) {
         <button className="btn btn-submit" onClick={e => { e.stopPropagation(); onJoin(room.code); }}>Join</button>
       )}
       {room.status === 'playing' && (
-        <button className="btn btn-secondary" style={{ fontSize: '0.85em', padding: '7px 12px' }} onClick={e => { e.stopPropagation(); onView(room.code); }}>👁 View</button>
+        <span className="muted-text" style={{ fontSize: '0.8em', fontWeight: 600, whiteSpace: 'nowrap' }}>In progress</span>
       )}
     </div>
   );
 }
 
-export default function JoinRoom({ onWaiting, onSpectate }) {
-  const { setPlayerInfo, setRoom, setPlayerNum, setConfig, setOpponent } = useGameContext();
+export default function JoinRoom({ onWaiting }) {
+  const { setPlayerInfo, setRoom, setPlayerNum, setConfig, setOpponent, setOpponentReady } = useGameContext();
   const { socketRef } = useSocket();
 
   const [name, setName] = useState('');
@@ -99,10 +99,13 @@ export default function JoinRoom({ onWaiting, onSpectate }) {
     socket.once('playerJoined', (data) => {
       if (data.config) setConfig(data.config);
       const creator = (data.players || []).find(p => p.id === data.creatorId);
-      if (creator) setOpponent(creator.name, creator.avatarIndex, creator.id);
+      if (creator) {
+        setOpponent(creator.name, creator.avatarIndex, creator.id);
+        setOpponentReady(true);
+      }
       setRoom(roomCode, 'joiner', data.config);
       setJoining(false);
-      onWaiting(roomCode, 'Waiting for host to start the game…');
+      onWaiting();
     });
   }
 
@@ -152,7 +155,7 @@ export default function JoinRoom({ onWaiting, onSpectate }) {
       ) : (
         <div className="rooms-list">
           {filtered.map(r => (
-            <RoomCard key={r.code} room={r} onJoin={joinByCode} onView={onSpectate} />
+            <RoomCard key={r.code} room={r} onJoin={joinByCode} />
           ))}
         </div>
       )}
