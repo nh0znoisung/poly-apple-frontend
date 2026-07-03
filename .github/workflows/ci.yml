@@ -1,0 +1,96 @@
+# CI: install, build, test, security scan (Trivy).
+# Vite/React frontend. Adapted from the org Gradle template (build -> test ->
+# Trivy HIGH/CRITICAL gate -> report) for a Node stack on GitHub-hosted runners.
+name: CI
+
+on:
+  push:
+    branches: ["main", "dev"]
+  pull_request:
+    branches: ["main", "dev"]
+    types: ["opened", "synchronize", "reopened"]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Test (equation parser)
+        run: npm test
+
+  security-scan:
+    # Runs after build-and-test passes. Trivy reads package-lock.json directly,
+    # so no build artifact needs to be carried between jobs.
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Trivy
+        run: |
+          TRIVY_VERSION="0.71.1"
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" \
+            | tar -xz -C "$HOME/.local/bin" trivy
+          chmod +x "$HOME/.local/bin/trivy"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/trivy" --version
+
+      - name: Cache Trivy vulnerability DB
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/trivy
+          key: trivy-db-${{ runner.os }}-${{ github.run_number }}
+          restore-keys: trivy-db-${{ runner.os }}-
+
+      - name: Run Trivy scan
+        id: trivy
+        # One filesystem pass covering dependency CVEs (package-lock.json),
+        # secrets, and IaC/misconfig. JSON feeds trivy-report.py; the table is a
+        # human-readable artifact. continue-on-error lets the report + upload run;
+        # the gate step turns findings into a failure.
+        continue-on-error: true
+        run: |
+          set +e
+          mkdir -p build/security
+          trivy fs --scanners vuln,secret,misconfig --severity HIGH,CRITICAL \
+            --no-progress --skip-dirs node_modules,dist --exit-code 1 \
+            --format json --output build/security/trivy-source.json .
+          rc=$?
+          trivy fs --scanners vuln,secret,misconfig --severity HIGH,CRITICAL \
+            --no-progress --skip-dirs node_modules,dist --exit-code 0 \
+            --format table --output build/security/trivy-source.txt . >/dev/null
+          exit $rc
+
+      - name: Generate security report
+        if: always()
+        run: python3 scripts/trivy-report.py build/security | tee -a "${GITHUB_STEP_SUMMARY:-/dev/null}"
+
+      - name: Upload Trivy report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-report
+          path: build/security/
+          if-no-files-found: ignore
+
+      - name: Gate on findings
+        if: steps.trivy.outcome == 'failure'
+        run: |
+          echo "::error title=Security vulnerabilities found::Trivy detected HIGH/CRITICAL issues. See the job summary and the trivy-report artifact."
+          exit 1
